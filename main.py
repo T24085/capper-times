@@ -243,6 +243,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def start(self, seconds: float):
         print(f"start() called with {seconds} seconds")
         self._remaining = float(seconds)
+        # Clear "READY" text immediately
+        self.label.setText("")
         # Ensure window is shown and visible first
         self.show()
         self.raise_()
@@ -250,7 +252,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Force window to front
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
-        # Update label
+        # Update label with timer value
         print(f"Updating label, remaining={self._remaining}")
         self._update_label()
         print(f"Starting timer, label text='{self.label.text()}'")
