@@ -195,11 +195,11 @@ class OverlayWindow(QtWidgets.QMainWindow):
             if not self.isVisible():
                 self.show()
             
-            # Enable translucent background AFTER window is created and shown
-            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            # Don't use WA_TranslucentBackground - it conflicts with SetLayeredWindowAttributes
+            # Instead, use Windows API directly for transparency
             
             # Wait a bit for window to be fully rendered
-            QtCore.QTimer.singleShot(100, lambda: self._setup_layered_window())
+            QtCore.QTimer.singleShot(200, lambda: self._setup_layered_window())
         except Exception as e:
             print(f"Warning: Could not setup click-through: {e}")
     
@@ -214,16 +214,16 @@ class OverlayWindow(QtWidgets.QMainWindow):
             
             ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
             
-            # First ensure window is layered
+            # Enable layered window style
             ex_style |= win32con.WS_EX_LAYERED
             win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
             
-            # Make window fully opaque initially to ensure it renders
-            # Use LWA_ALPHA flag only - suppress errors
-            try:
-                win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
-            except Exception:
-                pass  # Ignore UpdateLayeredWindowIndirect errors
+            # Set window to be fully opaque (255 = fully opaque)
+            # This prevents UpdateLayeredWindowIndirect errors
+            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+            
+            # Now enable translucent background for Qt rendering
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
             
             # Wait a bit to ensure rendering is complete, then make click-through
             QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
