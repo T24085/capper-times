@@ -306,6 +306,12 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
+        
+        # Clear label first to prevent text overlap
+        self.label.clear()
+        QtWidgets.QApplication.processEvents()
+        
+        # Set new text
         self.label.setText(text)
         
         # Change to red and start flashing if <= 10 seconds
@@ -334,11 +340,12 @@ class OverlayWindow(QtWidgets.QMainWindow):
                     padding: 20px;
                 }
             """)
-            self.label.setVisible(True)  # Ensure visible when not flashing
         
-        # Force update - schedule in Qt event loop to avoid layered window errors
-        QtCore.QTimer.singleShot(0, lambda: self.label.update())
-        QtCore.QTimer.singleShot(0, lambda: self.update())
+        # Force update
+        self.label.setVisible(True)
+        self.label.show()
+        self.label.repaint()
+        QtWidgets.QApplication.processEvents()
 
 
 class CapTimerApp:
