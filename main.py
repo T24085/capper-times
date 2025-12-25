@@ -130,10 +130,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.setWindowFlags(
             QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.Tool
         )
-        # Enable translucent background for transparency
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.resize(600, 200)
-        # No background color - fully transparent
+        # Set transparent background using stylesheet
         self.setStyleSheet("background-color: transparent;")
         
         # Connect signal to start method
