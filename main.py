@@ -229,6 +229,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
             print(f"Warning: Could not enable click-through: {e}")
 
     def start(self, seconds: float):
+        print(f"start() called with {seconds} seconds")
         self._remaining = float(seconds)
         # Ensure window is shown and visible first
         self.show()
@@ -238,8 +239,11 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
         # Update label
+        print(f"Updating label, remaining={self._remaining}")
         self._update_label()
+        print(f"Starting timer, label text='{self.label.text()}'")
         self._qtimer.start()
+        print(f"Timer started successfully")
 
     def stop(self):
         self._qtimer.stop()
@@ -380,11 +384,14 @@ class CapTimerApp:
 
     def _on_hotkey(self):
         # cycle index => start chosen timer and broadcast if enabled
+        print(f"Hotkey pressed!")
         with self.lock:
             self.cycle_index = (self.cycle_index + 1) % len(TIMER_OPTIONS)
             sec = TIMER_OPTIONS[self.cycle_index]
+            print(f"Emitting signal with {sec} seconds")
             # Use Qt signal to safely call start() from background thread
             self.window.start_timer_signal.emit(float(sec))
+            print(f"Signal emitted")
 
             # Send via WebSocket if connected
             if self.ws_client and self.ws_client.running:
