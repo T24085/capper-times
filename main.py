@@ -279,29 +279,31 @@ class OverlayWindow(QtWidgets.QMainWindow):
         """Flash the label when <= 10 seconds"""
         if self._remaining <= 10:
             self._flash_state = not self._flash_state
-            # Alternate between bright red and slightly dimmed red for flash effect
-            if self._flash_state:
-                # Bright red
-                self.label.setStyleSheet("""
-                    QLabel {
-                        color: #FF0000;
-                        background-color: transparent;
-                        border: none;
-                        padding: 20px;
-                    }
-                """)
-            else:
-                # Dimmed red (darker)
-                self.label.setStyleSheet("""
-                    QLabel {
-                        color: #CC0000;
-                        background-color: transparent;
-                        border: none;
-                        padding: 20px;
-                    }
-                """)
-            self.label.update()
-            self.update()
+            # Recreate pixmap with flashing color
+            sec = int(self._remaining + 0.999)
+            text = f"{sec:02d}s"
+            
+            # Alternate between bright red and dimmed red
+            color = "#FF0000" if self._flash_state else "#CC0000"
+            
+            # Create fresh transparent pixmap
+            pixmap = QtGui.QPixmap(self.label.size())
+            pixmap.fill(QtCore.Qt.transparent)
+            
+            painter = QtGui.QPainter(pixmap)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
+            
+            font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
+            painter.setFont(font)
+            qcolor = QtGui.QColor(color)
+            painter.setPen(qcolor)
+            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, text)
+            painter.end()
+            
+            self.label.setPixmap(pixmap)
+            self.label.repaint()
+            QtWidgets.QApplication.processEvents()
 
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
