@@ -122,11 +122,15 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Cap Timer Overlay")
+        # Use simpler window flags first to ensure visibility
         self.setWindowFlags(
             QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.Tool
         )
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # Don't use WA_TranslucentBackground initially - it might prevent rendering
+        # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.resize(600, 200)
+        # Set a background color so we can see the window
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 200);")
 
         # central label
         self.label = QtWidgets.QLabel("", self)
@@ -167,17 +171,19 @@ class OverlayWindow(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(200, self._make_click_through)
 
     def _make_click_through(self):
+        # TEMPORARILY DISABLED - Test visibility first
+        # The WS_EX_TRANSPARENT flag might be preventing rendering
+        # Let's get the window visible first, then we can add click-through back
         hwnd = int(self.winId())
         ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        # First ensure window is visible, then make it click-through
+        # Only use WS_EX_LAYERED for transparency, NOT WS_EX_TRANSPARENT
+        # WS_EX_TRANSPARENT makes the window completely click-through but can prevent rendering
         ex_style |= win32con.WS_EX_LAYERED
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
-        # Make window fully opaque first to ensure it renders
+        # Make window visible (fully opaque)
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
-        # Now make it click-through (but keep it visible)
-        ex_style |= win32con.WS_EX_TRANSPARENT
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
-        print("Click-through window configured")
+        print("Window configured (click-through DISABLED for testing - window should be visible)")
+        print("NOTE: Window will NOT be click-through - you can click on it to test visibility")
 
     def start(self, seconds: float):
         self._remaining = float(seconds)
