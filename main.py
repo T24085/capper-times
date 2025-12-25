@@ -311,8 +311,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
         if self.label.text() == text:
             return
         
-        # Use solid background briefly to force clear of old text pixels
-        # This is necessary because transparent backgrounds don't erase old pixels
+        # Use solid background VERY briefly to force clear of old text pixels
+        # Set transparent background immediately after to minimize visible flash
         self.label.setStyleSheet("""
             QLabel {
                 color: #00FF00;
@@ -322,10 +322,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
             }
         """)
         self.label.setText("")
-        self.label.repaint()
-        QtWidgets.QApplication.processEvents()
         
-        # Now set the new text
+        # Immediately set new text and transparent background in one go
         self.label.setText(text)
         
         # Change to red and start flashing if <= 10 seconds
