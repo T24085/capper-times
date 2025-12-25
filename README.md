@@ -12,11 +12,22 @@ Simple overlay countdown timer to sync capper routes across players.
 
 ## Installation
 
+### Client Installation
+
 1. Install Python 3.7+ if you don't have it
-2. Install dependencies:
+2. Install client dependencies:
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements-client.txt
    ```
+
+### Server Installation (for local testing)
+
+The server only needs `websockets`:
+```bash
+pip install websockets
+```
+
+Note: `requirements.txt` is used by Railway and only contains server dependencies (no Windows-specific packages).
 
 ## Usage
 
@@ -74,7 +85,8 @@ python main.py --server wss://your-app.railway.app --hotkey f
 
 ## Requirements
 
-- Windows (for click-through functionality)
-- Python 3.7+
-- See `requirements.txt` for Python dependencies
+- **Client**: Windows (for click-through functionality), Python 3.7+
+- **Server**: Any platform, Python 3.7+
+- See `requirements-client.txt` for client dependencies
+- See `requirements.txt` for server dependencies (Railway)
 
