@@ -17,6 +17,10 @@ import socket
 import uuid
 import threading
 import argparse
+import os
+
+# Suppress Qt warnings/errors to console
+os.environ['QT_LOGGING_RULES'] = '*.debug=false'
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal
