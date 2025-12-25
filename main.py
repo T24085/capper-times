@@ -303,7 +303,16 @@ class CapTimerApp:
             # start locally (must run in Qt main thread)
             # Use QTimer.singleShot to execute in Qt event loop
             # Capture sec in lambda to avoid closure issues
-            QtCore.QTimer.singleShot(0, lambda s=sec: self.window.start(s))
+            def start_timer(s):
+                try:
+                    print(f"About to call window.start({s})")
+                    self.window.start(s)
+                    print(f"window.start({s}) completed")
+                except Exception as e:
+                    print(f"ERROR calling window.start: {e}")
+                    import traceback
+                    traceback.print_exc()
+            QtCore.QTimer.singleShot(0, lambda s=sec: start_timer(s))
 
             # Send via WebSocket if connected
             if self.ws_client and self.ws_client.running:
