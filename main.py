@@ -327,12 +327,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
             """)
             self.label.setVisible(True)  # Ensure visible when not flashing
         
-        # Force update without triggering layered window errors
-        try:
-            self.label.repaint()
-            self.repaint()
-        except:
-            pass
+        # Force update - schedule in Qt event loop to avoid layered window errors
+        QtCore.QTimer.singleShot(0, lambda: self.label.update())
+        QtCore.QTimer.singleShot(0, lambda: self.update())
 
 
 class CapTimerApp:
