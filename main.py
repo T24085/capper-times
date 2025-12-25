@@ -170,6 +170,12 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self._qtimer = QtCore.QTimer()
         self._qtimer.setInterval(50)  # 20 Hz
         self._qtimer.timeout.connect(self._tick)
+        
+        # Flash timer for red warning
+        self._flash_timer = QtCore.QTimer()
+        self._flash_timer.setInterval(250)  # Flash every 250ms
+        self._flash_state = False
+        self._flash_timer.timeout.connect(self._flash_tick)
 
     def _apply_click_through_later(self):
         # Apply click-through after window is created on Windows
@@ -204,8 +210,10 @@ class OverlayWindow(QtWidgets.QMainWindow):
 
     def stop(self):
         self._qtimer.stop()
+        self._flash_timer.stop()
         self.label.setText("")
         self._remaining = 0.0
+        self._flash_state = False
 
     def _tick(self):
         self._remaining -= 0.05
@@ -213,11 +221,69 @@ class OverlayWindow(QtWidgets.QMainWindow):
             self.stop()
             return
         self._update_label()
+    
+    def _flash_tick(self):
+        """Flash the label when <= 10 seconds"""
+        if self._remaining <= 10:
+            self._flash_state = not self._flash_state
+            # Alternate between visible and slightly transparent for flash effect
+            if self._flash_state:
+                self.label.setStyleSheet("""
+                    QLabel {
+                        color: #FF0000;
+                        background-color: rgba(255, 0, 0, 100);
+                        border: 3px solid rgba(255, 0, 0, 255);
+                        border-radius: 15px;
+                        padding: 20px;
+                    }
+                """)
+            else:
+                self.label.setStyleSheet("""
+                    QLabel {
+                        color: #FF0000;
+                        background-color: rgba(0, 0, 0, 200);
+                        border: 3px solid rgba(255, 0, 0, 255);
+                        border-radius: 15px;
+                        padding: 20px;
+                    }
+                """)
+            self.label.update()
+            self.update()
 
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
         self.label.setText(text)
+        
+        # Change to red and start flashing if <= 10 seconds
+        if self._remaining <= 10:
+            if not self._flash_timer.isActive():
+                self._flash_timer.start()
+            # Red color for warning
+            self.label.setStyleSheet("""
+                QLabel {
+                    color: #FF0000;
+                    background-color: rgba(0, 0, 0, 200);
+                    border: 3px solid rgba(255, 0, 0, 255);
+                    border-radius: 15px;
+                    padding: 20px;
+                }
+            """)
+        else:
+            # Stop flashing and use normal green color
+            if self._flash_timer.isActive():
+                self._flash_timer.stop()
+            self.label.setStyleSheet("""
+                QLabel {
+                    color: #00FF00;
+                    background-color: rgba(0, 0, 0, 200);
+                    border: 3px solid rgba(255, 255, 255, 255);
+                    border-radius: 15px;
+                    padding: 20px;
+                }
+            """)
+            self.label.setVisible(True)  # Ensure visible when not flashing
+        
         self.label.update()
         self.update()
 
