@@ -299,33 +299,36 @@ class OverlayWindow(QtWidgets.QMainWindow):
         if self._remaining <= 10:
             if not self._flash_timer.isActive():
                 self._flash_timer.start()
-            # Red color for warning
+            # Red color for warning - transparent background
             self.label.setStyleSheet("""
                 QLabel {
                     color: #FF0000;
-                    background-color: rgba(0, 0, 0, 200);
-                    border: 3px solid rgba(255, 0, 0, 255);
-                    border-radius: 15px;
+                    background-color: transparent;
+                    border: none;
                     padding: 20px;
                 }
             """)
         else:
-            # Stop flashing and use normal green color
+            # Stop flashing and use normal green color - transparent background
             if self._flash_timer.isActive():
                 self._flash_timer.stop()
+                self._flash_state = False
             self.label.setStyleSheet("""
                 QLabel {
                     color: #00FF00;
-                    background-color: rgba(0, 0, 0, 200);
-                    border: 3px solid rgba(255, 255, 255, 255);
-                    border-radius: 15px;
+                    background-color: transparent;
+                    border: none;
                     padding: 20px;
                 }
             """)
             self.label.setVisible(True)  # Ensure visible when not flashing
         
-        self.label.update()
-        self.update()
+        # Force update without triggering layered window errors
+        try:
+            self.label.repaint()
+            self.repaint()
+        except:
+            pass
 
 
 class CapTimerApp:
