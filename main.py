@@ -181,20 +181,42 @@ class OverlayWindow(QtWidgets.QMainWindow):
 
     def _make_click_through(self):
         """Make window click-through after ensuring it's rendered"""
-        # Enable translucent background AFTER window is created and shown
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        
-        hwnd = int(self.winId())
-        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        
-        # First ensure window is layered and visible
-        ex_style |= win32con.WS_EX_LAYERED
-        win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
-        # Make window fully opaque initially to ensure it renders
-        win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
-        
-        # Wait a bit to ensure rendering is complete, then make click-through
-        QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
+        try:
+            # Ensure window is shown first
+            if not self.isVisible():
+                self.show()
+            
+            # Enable translucent background AFTER window is created and shown
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            
+            # Wait a bit for window to be fully rendered
+            QtCore.QTimer.singleShot(100, lambda: self._setup_layered_window())
+        except Exception as e:
+            print(f"Warning: Could not setup click-through: {e}")
+    
+    def _setup_layered_window(self):
+        """Setup layered window attributes after window is rendered"""
+        try:
+            hwnd = int(self.winId())
+            if hwnd == 0:
+                # Window not ready yet, try again
+                QtCore.QTimer.singleShot(100, lambda: self._setup_layered_window())
+                return
+            
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            
+            # First ensure window is layered
+            ex_style |= win32con.WS_EX_LAYERED
+            win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
+            
+            # Make window fully opaque initially to ensure it renders
+            # Use LWA_ALPHA flag only
+            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+            
+            # Wait a bit to ensure rendering is complete, then make click-through
+            QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
+        except Exception as e:
+            print(f"Warning: Could not setup layered window: {e}")
     
     def _enable_click_through(self, hwnd):
         """Enable click-through after window is fully rendered"""
