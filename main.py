@@ -137,13 +137,18 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.label.setStyleSheet("""
             QLabel {
                 color: #00FF00;
-                background-color: rgba(0, 0, 0, 180);
+                background-color: rgba(0, 0, 0, 200);
                 border: 3px solid rgba(255, 255, 255, 255);
                 border-radius: 15px;
                 padding: 20px;
             }
         """)
+        # Ensure label fills the window
+        self.label.setMinimumSize(600, 200)
         self.setCentralWidget(self.label)
+        # Set initial text to test visibility
+        self.label.setText("READY")
+        print("Overlay window created, label initialized")
 
         # background opacity widget to improve visibility
         self.bg = None
@@ -163,22 +168,28 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def _make_click_through(self):
         hwnd = int(self.winId())
         ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        ex_style |= (win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT)
+        # Use WS_EX_LAYERED for transparency, but don't use WS_EX_TRANSPARENT
+        # WS_EX_TRANSPARENT makes the entire window click-through which can prevent rendering
+        # Instead, we'll use WS_EX_LAYERED with alpha blending
+        ex_style |= win32con.WS_EX_LAYERED
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
-        # set layered window alpha to allow translucent background
-        # Use LWA_ALPHA to make window semi-transparent but visible
-        win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+        # Set window to be semi-transparent but still visible
+        # 240 = ~94% opacity (slightly transparent but very visible)
+        win32gui.SetLayeredWindowAttributes(hwnd, 0, 240, win32con.LWA_ALPHA)
+        print("Click-through window configured (semi-transparent, visible)")
 
     def start(self, seconds: float):
         self._remaining = float(seconds)
+        print(f"Timer start called: {seconds}s, remaining={self._remaining}")
         self._update_label()
+        print(f"Label text after update: '{self.label.text()}'")
         self.show()
         self.raise_()
         self.activateWindow()
         # Force window to front
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
-        print(f"Timer started: {seconds}s - Window should be visible")
+        print(f"Timer started: {seconds}s - Window should be visible, label='{self.label.text()}'")
         self._qtimer.start()
 
     def stop(self):
@@ -195,7 +206,11 @@ class OverlayWindow(QtWidgets.QMainWindow):
 
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
-        self.label.setText(f"{sec:02d}s")
+        text = f"{sec:02d}s"
+        self.label.setText(text)
+        self.label.repaint()  # Force repaint
+        self.repaint()  # Force window repaint
+        print(f"Updated label to: '{text}' (remaining={self._remaining:.2f})")
 
 
 class CapTimerApp:
