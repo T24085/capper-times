@@ -210,8 +210,11 @@ class OverlayWindow(QtWidgets.QMainWindow):
             win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
             
             # Make window fully opaque initially to ensure it renders
-            # Use LWA_ALPHA flag only
-            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+            # Use LWA_ALPHA flag only - suppress errors
+            try:
+                win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+            except Exception:
+                pass  # Ignore UpdateLayeredWindowIndirect errors
             
             # Wait a bit to ensure rendering is complete, then make click-through
             QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
