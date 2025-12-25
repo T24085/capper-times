@@ -19,6 +19,7 @@ import threading
 import argparse
 
 from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import pyqtSignal
 
 try:
     import keyboard
@@ -119,6 +120,9 @@ class WebSocketClient:
 
 
 class OverlayWindow(QtWidgets.QMainWindow):
+    # Signal to start timer from any thread
+    start_timer_signal = QtCore.pyqtSignal(float)
+    
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Cap Timer Overlay")
@@ -131,6 +135,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.resize(600, 200)
         # Set a background color so we can see the window
         self.setStyleSheet("background-color: rgba(0, 0, 0, 200);")
+        
+        # Connect signal to start method
+        self.start_timer_signal.connect(self.start)
 
         # central label
         self.label = QtWidgets.QLabel("", self)
@@ -300,19 +307,10 @@ class CapTimerApp:
             self.cycle_index = (self.cycle_index + 1) % len(TIMER_OPTIONS)
             sec = TIMER_OPTIONS[self.cycle_index]
             print(f"Starting timer: {sec} seconds")
-            # start locally (must run in Qt main thread)
-            # Use QTimer.singleShot to execute in Qt event loop
-            # Capture sec in lambda to avoid closure issues
-            def start_timer(s):
-                try:
-                    print(f"About to call window.start({s})")
-                    self.window.start(s)
-                    print(f"window.start({s}) completed")
-                except Exception as e:
-                    print(f"ERROR calling window.start: {e}")
-                    import traceback
-                    traceback.print_exc()
-            QtCore.QTimer.singleShot(0, lambda s=sec: start_timer(s))
+            # Use Qt signal to safely call start() from background thread
+            print(f"Emitting start_timer_signal with {sec} seconds")
+            self.window.start_timer_signal.emit(float(sec))
+            print(f"Signal emitted")
 
             # Send via WebSocket if connected
             if self.ws_client and self.ws_client.running:
