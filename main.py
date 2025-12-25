@@ -131,9 +131,18 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # central label
         self.label = QtWidgets.QLabel("", self)
         self.label.setAlignment(QtCore.Qt.AlignCenter)
-        font = QtGui.QFont("Segoe UI", 64, QtGui.QFont.Bold)
+        font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
         self.label.setFont(font)
-        self.label.setStyleSheet("color: white;")
+        # Make text highly visible with dark background and bright text
+        self.label.setStyleSheet("""
+            QLabel {
+                color: #00FF00;
+                background-color: rgba(0, 0, 0, 180);
+                border: 3px solid rgba(255, 255, 255, 255);
+                border-radius: 15px;
+                padding: 20px;
+            }
+        """)
         self.setCentralWidget(self.label)
 
         # background opacity widget to improve visibility
@@ -157,6 +166,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
         ex_style |= (win32con.WS_EX_LAYERED | win32con.WS_EX_TRANSPARENT)
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
         # set layered window alpha to allow translucent background
+        # Use LWA_ALPHA to make window semi-transparent but visible
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
 
     def start(self, seconds: float):
@@ -165,6 +175,10 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.show()
         self.raise_()
         self.activateWindow()
+        # Force window to front
+        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
+        self.raise_()
+        print(f"Timer started: {seconds}s - Window should be visible")
         self._qtimer.start()
 
     def stop(self):
@@ -296,7 +310,11 @@ class CapTimerApp:
         w = self.window.width()
         h = self.window.height()
         self.window.move(int((screen.width() - w) / 2), int(screen.height() * 0.05))
-        self.window.show()  # don't display label until timer starts
+        # Show window immediately so it's ready
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+        print("Overlay window initialized and should be visible")
         sys.exit(self.app.exec_())
 
 
