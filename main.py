@@ -307,21 +307,23 @@ class OverlayWindow(QtWidgets.QMainWindow):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
         
-        # Simply set new text - Qt should handle clearing automatically
-        # Only use solid background trick if text is actually changing
-        if self.label.text() != text:
-            # Text is changing, use solid background to force clear
-            self.label.setStyleSheet("""
-                QLabel {
-                    color: #00FF00;
-                    background-color: rgba(0, 0, 0, 255);
-                    border: none;
-                    padding: 20px;
-                }
-            """)
-            self.label.setText("")
-            self.label.repaint()
-            QtWidgets.QApplication.processEvents()
+        # Only update if text is changing to avoid unnecessary work
+        if self.label.text() == text:
+            return
+        
+        # Use solid background briefly to force clear of old text pixels
+        # This is necessary because transparent backgrounds don't erase old pixels
+        self.label.setStyleSheet("""
+            QLabel {
+                color: #00FF00;
+                background-color: rgba(0, 0, 0, 255);
+                border: none;
+                padding: 20px;
+            }
+        """)
+        self.label.setText("")
+        self.label.repaint()
+        QtWidgets.QApplication.processEvents()
         
         # Now set the new text
         self.label.setText(text)
