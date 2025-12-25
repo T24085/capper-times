@@ -307,30 +307,21 @@ class OverlayWindow(QtWidgets.QMainWindow):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
         
-        # Aggressively clear label first to prevent text overlap
-        self.label.setText("")  # Clear with empty string
-        self.label.clear()      # Also call clear()
-        self.label.update()     # Force immediate update
-        self.update()           # Force window update
-        QtWidgets.QApplication.processEvents()  # Process events
-        
-        # Small delay to ensure clear happens
-        QtCore.QTimer.singleShot(10, lambda: self._set_label_text(text))
-    
-    def _set_label_text(self, text):
-        """Set label text after clearing"""
-        # First set a solid background to force clear of old text
-        self.label.setStyleSheet("""
-            QLabel {
-                color: #00FF00;
-                background-color: rgba(0, 0, 0, 255);
-                border: none;
-                padding: 20px;
-            }
-        """)
-        self.label.setText("")
-        self.label.repaint()
-        QtWidgets.QApplication.processEvents()
+        # Simply set new text - Qt should handle clearing automatically
+        # Only use solid background trick if text is actually changing
+        if self.label.text() != text:
+            # Text is changing, use solid background to force clear
+            self.label.setStyleSheet("""
+                QLabel {
+                    color: #00FF00;
+                    background-color: rgba(0, 0, 0, 255);
+                    border: none;
+                    padding: 20px;
+                }
+            """)
+            self.label.setText("")
+            self.label.repaint()
+            QtWidgets.QApplication.processEvents()
         
         # Now set the new text
         self.label.setText(text)
