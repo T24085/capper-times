@@ -181,12 +181,16 @@ class OverlayWindow(QtWidgets.QMainWindow):
 
     def _make_click_through(self):
         """Make window click-through after ensuring it's rendered"""
+        # Enable translucent background AFTER window is created and shown
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        
         hwnd = int(self.winId())
         ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
         
         # First ensure window is layered and visible
         ex_style |= win32con.WS_EX_LAYERED
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
+        # Make window fully opaque initially to ensure it renders
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
         
         # Wait a bit to ensure rendering is complete, then make click-through
