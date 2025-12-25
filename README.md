@@ -90,3 +90,81 @@ python main.py --server wss://your-app.railway.app --hotkey f
 - See `requirements-client.txt` for client dependencies
 - See `requirements.txt` for server dependencies (Railway)
 
+## Team Setup
+
+### For Your Team Members:
+
+1. **Install Python** (if not already installed)
+   - Download from https://www.python.org/downloads/
+   - Make sure to check "Add Python to PATH" during installation
+
+2. **Get the Files:**
+   - Download/clone this repository
+   - Or just get these files:
+     - `main.py`
+     - `start-timer.bat`
+     - `requirements-client.txt`
+
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements-client.txt
+   ```
+
+4. **Run the Timer:**
+   - Double-click `start-timer.bat`
+   - Or edit `start-timer.bat` and change the server URL if needed
+   - The overlay will appear with "READY" text
+   - Press `V` to start timers (35s → 25s → 20s)
+
+5. **Server URL:**
+   - Your Railway server: `wss://web-production-03594.up.railway.app`
+   - This is already configured in `start-timer.bat`
+
+## Customization
+
+### Change Timer Presets
+
+Edit `main.py` and find:
+```python
+TIMER_OPTIONS = [35, 25, 20]  # Change these values
+```
+
+### Change Hotkey
+
+Edit `start-timer.bat` and change:
+```bash
+python main.py --server wss://web-production-03594.up.railway.app --hotkey f
+```
+(Change `f` to any key you want)
+
+### Change Colors
+
+In `main.py`, find the `setStyleSheet` calls:
+- Green color (normal): `color: #00FF00;`
+- Red color (warning): `color: #FF0000;`
+- Background: `background-color: rgba(0, 0, 0, 200);`
+
+### Change Position
+
+In `main.py`, find `run()` method and change:
+```python
+self.window.move(int((screen.width() - w) / 2), int(screen.height() * 0.05))
+```
+- First number: horizontal position (0 = left, screen.width = right)
+- Second number: vertical position (0 = top, screen.height = bottom)
+
+### Change Size
+
+In `main.py`, find:
+```python
+self.resize(600, 200)  # width, height in pixels
+self.label.setMinimumSize(600, 200)
+```
+
+### Change Font Size
+
+In `main.py`, find:
+```python
+font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)  # Change 72 to desired size
+```
+
