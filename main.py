@@ -63,7 +63,13 @@ class WebSocketClient:
     async def _connect(self):
         """Connect to WebSocket server"""
         try:
-            self.websocket = await websockets.connect(self.server_url)
+            # Configure WebSocket with ping/pong keepalive for Railway
+            self.websocket = await websockets.connect(
+                self.server_url,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                close_timeout=10   # Wait 10 seconds when closing
+            )
             self.running = True
             print(f"Connected to server: {self.server_url}")
             # Start listening
@@ -85,11 +91,8 @@ class WebSocketClient:
                             continue
                         sec = float(data["seconds"])
                         # Update timer in Qt thread
-                        QtCore.QMetaObject.invokeMethod(
-                            self.app.window, "start", 
-                            QtCore.Qt.QueuedConnection, 
-                            QtCore.Q_ARG(float, sec)
-                        )
+                        # Capture sec in lambda to avoid closure issues
+                        QtCore.QTimer.singleShot(0, lambda s=sec: self.app.window.start(s))
                 except Exception:
                     continue
         except websockets.exceptions.ConnectionClosed:
@@ -193,6 +196,7 @@ class CapTimerApp:
         self.ws_client = None
         self.ws_loop = None
         if server_url and websockets:
+            print(f"Connecting to WebSocket server: {server_url}")
             self.ws_loop = asyncio.new_event_loop()
             self.ws_thread = threading.Thread(target=self._run_ws_loop, daemon=True)
             self.ws_thread.start()
@@ -201,6 +205,8 @@ class CapTimerApp:
             asyncio.run_coroutine_threadsafe(self.ws_client._connect(), self.ws_loop)
             # Store loop reference in client
             self.ws_client.loop = self.ws_loop
+        elif server_url:
+            print("WARNING: websockets library not available. Install with: pip install websockets")
         
         # Keep UDP for LAN fallback (only if no WebSocket)
         if self.network_enabled and not server_url:
@@ -222,21 +228,30 @@ class CapTimerApp:
         self.ws_loop.run_forever()
 
     def _setup_hotkey(self):
-        # keyboard.on_press_key runs callbacks in background threads already
-        keyboard.on_press_key(HOTKEY, lambda e: self._on_hotkey())
+        try:
+            print(f"Setting up hotkey: '{HOTKEY}' (press this key to start timer)")
+            # keyboard.on_press_key runs callbacks in background threads already
+            keyboard.on_press_key(HOTKEY, lambda e: self._on_hotkey())
+            print(f"Hotkey '{HOTKEY}' registered successfully!")
+        except Exception as e:
+            print(f"ERROR: Failed to register hotkey '{HOTKEY}': {e}")
+            print("On Windows, you may need to run as Administrator for global hotkeys to work.")
+            print("Try right-clicking PowerShell/Terminal and selecting 'Run as Administrator'")
         # Keep the thread alive by waiting
         while True:
             time.sleep(1)
 
     def _on_hotkey(self):
         # cycle index => start chosen timer and broadcast if enabled
+        print(f"Hotkey '{HOTKEY}' pressed!")
         with self.lock:
             self.cycle_index = (self.cycle_index + 1) % len(TIMER_OPTIONS)
             sec = TIMER_OPTIONS[self.cycle_index]
+            print(f"Starting timer: {sec} seconds")
             # start locally (must run in Qt main thread)
-            QtCore.QMetaObject.invokeMethod(
-                self.window, "start", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(float, sec)
-            )
+            # Use QTimer.singleShot to execute in Qt event loop
+            # Capture sec in lambda to avoid closure issues
+            QtCore.QTimer.singleShot(0, lambda s=sec: self.window.start(s))
 
             # Send via WebSocket if connected
             if self.ws_client and self.ws_client.running:
@@ -270,9 +285,8 @@ class CapTimerApp:
                 if msg.get("cmd") == "start" and "seconds" in msg:
                     sec = float(msg["seconds"])
                     # run in Qt thread
-                    QtCore.QMetaObject.invokeMethod(
-                        self.window, "start", QtCore.Qt.QueuedConnection, QtCore.Q_ARG(float, sec)
-                    )
+                    # Capture sec in lambda to avoid closure issues
+                    QtCore.QTimer.singleShot(0, lambda s=sec: self.window.start(s))
             except Exception:
                 continue
 

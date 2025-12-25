@@ -38,6 +38,9 @@ async def handle_client(websocket, path):
         
         await websocket.send(json.dumps({"cmd": "connected", "clients": len(clients)}))
         
+        # Set ping interval to keep connection alive (Railway closes idle connections)
+        websocket.ping_interval = 20  # Send ping every 20 seconds
+        
         # Listen for messages from this client
         async for message in websocket:
             try:
@@ -91,10 +94,19 @@ async def main():
     if PASSWORD:
         logger.info("Password protection enabled")
     
-    async with websockets.serve(handle_client, host, port):
+    # Configure WebSocket server with ping/pong keepalive
+    async with websockets.serve(
+        handle_client, 
+        host, 
+        port,
+        ping_interval=20,  # Send ping every 20 seconds
+        ping_timeout=10,   # Wait 10 seconds for pong
+        close_timeout=10   # Wait 10 seconds when closing
+    ):
         await asyncio.Future()  # run forever
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
