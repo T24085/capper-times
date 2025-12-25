@@ -440,9 +440,18 @@ class CapTimerApp:
     def run(self):
         # center on primary screen
         screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
-        w = self.window.width()
-        h = self.window.height()
-        self.window.move(int((screen.width() - w) / 2), int(screen.height() * 0.05))
+        w = 600
+        h = 200
+        x = int((screen.width() - w) / 2)
+        y = int(screen.height() * 0.05)
+        
+        # Set window geometry explicitly
+        self.window.setGeometry(x, y, w, h)
+        self.window.resize(w, h)
+        
+        print(f"Window positioned at ({x}, {y}) with size {w}x{h}")
+        print(f"Screen size: {screen.width()}x{screen.height()}")
+        
         # Show window immediately so it's ready - make sure it's visible
         self.window.show()
         self.window.raise_()
@@ -450,8 +459,15 @@ class CapTimerApp:
         # Force window to be on top
         self.window.setWindowState(self.window.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.window.raise_()
+        
+        # Ensure label is visible and properly sized
+        self.window.label.show()
+        self.window.label.setVisible(True)
+        self.window.label.resize(w, h)
+        
         # Process events to ensure window is rendered
         self.app.processEvents()
+        print(f"Window should be visible. Label text: '{self.window.label.text()}'")
         sys.exit(self.app.exec_())
 
 
