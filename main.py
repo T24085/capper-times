@@ -195,12 +195,14 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Force window to front
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
+        # Ensure label is visible
+        self.label.show()
+        self.label.setVisible(True)
         # Update label after window is shown
         self._update_label()
         print(f"Label text after update: '{self.label.text()}'")
-        # Force repaint
-        self.label.repaint()
-        self.repaint()
+        # Process events to ensure update happens immediately
+        QtWidgets.QApplication.processEvents()
         print(f"Timer started: {seconds}s - Window should be visible, label='{self.label.text()}'")
         self._qtimer.start()
 
@@ -219,10 +221,19 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
+        print(f"DEBUG: Updating label to: '{text}' (remaining={self._remaining:.2f})")
         self.label.setText(text)
-        self.label.repaint()  # Force repaint
-        self.repaint()  # Force window repaint
-        print(f"Updated label to: '{text}' (remaining={self._remaining:.2f})")
+        # Ensure label is visible and shown
+        self.label.show()
+        self.label.setVisible(True)
+        # Force update
+        self.label.update()
+        self.label.repaint()
+        self.update()
+        self.repaint()
+        # Process events to ensure update happens
+        QtWidgets.QApplication.processEvents()
+        print(f"DEBUG: Label text is now: '{self.label.text()}'")
 
 
 class CapTimerApp:
