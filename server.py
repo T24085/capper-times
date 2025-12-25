@@ -20,10 +20,11 @@ clients = set()
 PASSWORD = None  # Optional password protection
 
 
-async def handle_client(websocket, path):
+async def handle_client(websocket):
     """Handle a new client connection"""
     client_id = str(websocket.remote_address)
-    logger.info(f"Client connected: {client_id}")
+    path = getattr(websocket, 'path', '/')  # Get path from websocket object
+    logger.info(f"Client connected: {client_id}, path: {path}")
     clients.add(websocket)
     
     try:
