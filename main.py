@@ -130,11 +130,11 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.setWindowFlags(
             QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.Tool
         )
-        # Don't use WA_TranslucentBackground initially - it might prevent rendering
-        # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # Enable translucent background for transparency
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.resize(600, 200)
-        # Set a background color so we can see the window
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 200);")
+        # No background color - fully transparent
+        self.setStyleSheet("background-color: transparent;")
         
         # Connect signal to start method
         self.start_timer_signal.connect(self.start)
@@ -144,13 +144,12 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.label.setAlignment(QtCore.Qt.AlignCenter)
         font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
         self.label.setFont(font)
-        # Make text highly visible with dark background and bright text
+        # Make text visible with transparent background - only text shows
         self.label.setStyleSheet("""
             QLabel {
                 color: #00FF00;
-                background-color: rgba(0, 0, 0, 200);
-                border: 3px solid rgba(255, 255, 255, 255);
-                border-radius: 15px;
+                background-color: transparent;
+                border: none;
                 padding: 20px;
             }
         """)
@@ -236,24 +235,24 @@ class OverlayWindow(QtWidgets.QMainWindow):
         """Flash the label when <= 10 seconds"""
         if self._remaining <= 10:
             self._flash_state = not self._flash_state
-            # Alternate between visible and slightly transparent for flash effect
+            # Alternate between bright red and slightly dimmed red for flash effect
             if self._flash_state:
+                # Bright red
                 self.label.setStyleSheet("""
                     QLabel {
                         color: #FF0000;
-                        background-color: rgba(255, 0, 0, 100);
-                        border: 3px solid rgba(255, 0, 0, 255);
-                        border-radius: 15px;
+                        background-color: transparent;
+                        border: none;
                         padding: 20px;
                     }
                 """)
             else:
+                # Dimmed red (darker)
                 self.label.setStyleSheet("""
                     QLabel {
-                        color: #FF0000;
-                        background-color: rgba(0, 0, 0, 200);
-                        border: 3px solid rgba(255, 0, 0, 255);
-                        border-radius: 15px;
+                        color: #CC0000;
+                        background-color: transparent;
+                        border: none;
                         padding: 20px;
                     }
                 """)
