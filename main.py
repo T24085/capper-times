@@ -183,17 +183,27 @@ class OverlayWindow(QtWidgets.QMainWindow):
             QtCore.QTimer.singleShot(200, self._make_click_through)
 
     def _make_click_through(self):
-        # TEMPORARILY DISABLED - Test visibility first
-        # The WS_EX_TRANSPARENT flag might be preventing rendering
-        # Let's get the window visible first, then we can add click-through back
+        """Make window click-through after ensuring it's rendered"""
         hwnd = int(self.winId())
         ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        # Only use WS_EX_LAYERED for transparency, NOT WS_EX_TRANSPARENT
-        # WS_EX_TRANSPARENT makes the window completely click-through but can prevent rendering
+        
+        # First ensure window is layered and visible
         ex_style |= win32con.WS_EX_LAYERED
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
-        # Make window visible (fully opaque)
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
+        
+        # Wait a bit to ensure rendering is complete, then make click-through
+        QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
+    
+    def _enable_click_through(self, hwnd):
+        """Enable click-through after window is fully rendered"""
+        try:
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            ex_style |= win32con.WS_EX_TRANSPARENT
+            win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
+            print("Click-through enabled - window is now transparent to mouse clicks")
+        except Exception as e:
+            print(f"Warning: Could not enable click-through: {e}")
 
     def start(self, seconds: float):
         self._remaining = float(seconds)
