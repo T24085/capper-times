@@ -155,9 +155,14 @@ class OverlayWindow(QtWidgets.QMainWindow):
                 padding: 20px;
             }
         """)
-        # Ensure label fills the window
+        # Ensure label fills the window and is properly sized
         self.label.setMinimumSize(600, 200)
+        self.label.setMaximumSize(600, 200)
+        self.label.resize(600, 200)
         self.setCentralWidget(self.label)
+        
+        # Ensure window geometry is correct
+        self.setGeometry(0, 0, 600, 200)
         # Set initial text
         self.label.setText("READY")
         self.label.show()
