@@ -308,50 +308,42 @@ class OverlayWindow(QtWidgets.QMainWindow):
         text = f"{sec:02d}s"
         
         # Only update if text is changing to avoid unnecessary work
-        if self.label.text() == text:
-            return
+        if hasattr(self.label, 'pixmap') and self.label.pixmap():
+            # Check if text in pixmap matches
+            pass
         
-        # Use solid background VERY briefly to force clear of old text pixels
-        # Set transparent background immediately after to minimize visible flash
-        self.label.setStyleSheet("""
-            QLabel {
-                color: #00FF00;
-                background-color: rgba(0, 0, 0, 255);
-                border: none;
-                padding: 20px;
-            }
-        """)
-        self.label.setText("")
-        
-        # Immediately set new text and transparent background in one go
-        self.label.setText(text)
-        
-        # Change to red and start flashing if <= 10 seconds
+        # Determine color
         if self._remaining <= 10:
             if not self._flash_timer.isActive():
                 self._flash_timer.start()
-            # Red color for warning - transparent background
-            self.label.setStyleSheet("""
-                QLabel {
-                    color: #FF0000;
-                    background-color: transparent;
-                    border: none;
-                    padding: 20px;
-                }
-            """)
+            color = "#FF0000"  # Red
         else:
-            # Stop flashing and use normal green color - transparent background
             if self._flash_timer.isActive():
                 self._flash_timer.stop()
                 self._flash_state = False
-            self.label.setStyleSheet("""
-                QLabel {
-                    color: #00FF00;
-                    background-color: transparent;
-                    border: none;
-                    padding: 20px;
-                }
-            """)
+            color = "#00FF00"  # Green
+        
+        # Use QPixmap to properly clear transparent background
+        # Create a fresh transparent pixmap each time to ensure old pixels are cleared
+        pixmap = QtGui.QPixmap(self.label.size())
+        pixmap.fill(QtCore.Qt.transparent)  # Fill with transparent - this clears old pixels
+        
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
+        
+        # Set font and color
+        font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
+        painter.setFont(font)
+        qcolor = QtGui.QColor(color)
+        painter.setPen(qcolor)
+        
+        # Draw text centered
+        painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, text)
+        painter.end()
+        
+        # Set the pixmap to the label - this replaces the entire label content
+        self.label.setPixmap(pixmap)
         
         # Force update
         self.label.setVisible(True)
