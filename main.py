@@ -212,6 +212,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
                 QtCore.QTimer.singleShot(100, lambda: self._setup_layered_window())
                 return
             
+            # Enable translucent background FIRST (before Windows API calls)
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            
             ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
             
             # Enable layered window style
@@ -219,11 +222,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
             win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
             
             # Set window to be fully opaque (255 = fully opaque)
-            # This prevents UpdateLayeredWindowIndirect errors
-            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
-            
-            # Now enable translucent background for Qt rendering
-            self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+            # Don't call SetLayeredWindowAttributes if WA_TranslucentBackground is set
+            # This avoids UpdateLayeredWindowIndirect errors
             
             # Wait a bit to ensure rendering is complete, then make click-through
             QtCore.QTimer.singleShot(500, lambda: self._enable_click_through(hwnd))
