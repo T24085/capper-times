@@ -157,10 +157,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Ensure label fills the window
         self.label.setMinimumSize(600, 200)
         self.setCentralWidget(self.label)
-        # Set initial text to test visibility - make it visible immediately
+        # Set initial text
         self.label.setText("READY")
         self.label.show()
-        print("Overlay window created, label initialized with 'READY' text")
 
         # background opacity widget to improve visibility
         self.bg = None
@@ -189,12 +188,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
         win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, ex_style)
         # Make window visible (fully opaque)
         win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_ALPHA)
-        print("Window configured (click-through DISABLED for testing - window should be visible)")
-        print("NOTE: Window will NOT be click-through - you can click on it to test visibility")
 
     def start(self, seconds: float):
         self._remaining = float(seconds)
-        print(f"Timer start called: {seconds}s, remaining={self._remaining}")
         # Ensure window is shown and visible first
         self.show()
         self.raise_()
@@ -202,15 +198,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Force window to front
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
-        # Ensure label is visible
-        self.label.show()
-        self.label.setVisible(True)
-        # Update label after window is shown
+        # Update label
         self._update_label()
-        print(f"Label text after update: '{self.label.text()}'")
-        # Process events to ensure update happens immediately
-        QtWidgets.QApplication.processEvents()
-        print(f"Timer started: {seconds}s - Window should be visible, label='{self.label.text()}'")
         self._qtimer.start()
 
     def stop(self):
@@ -228,19 +217,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
-        print(f"DEBUG: Updating label to: '{text}' (remaining={self._remaining:.2f})")
         self.label.setText(text)
-        # Ensure label is visible and shown
-        self.label.show()
-        self.label.setVisible(True)
-        # Force update
         self.label.update()
-        self.label.repaint()
         self.update()
-        self.repaint()
-        # Process events to ensure update happens
-        QtWidgets.QApplication.processEvents()
-        print(f"DEBUG: Label text is now: '{self.label.text()}'")
 
 
 class CapTimerApp:
@@ -302,15 +281,11 @@ class CapTimerApp:
 
     def _on_hotkey(self):
         # cycle index => start chosen timer and broadcast if enabled
-        print(f"Hotkey '{HOTKEY}' pressed!")
         with self.lock:
             self.cycle_index = (self.cycle_index + 1) % len(TIMER_OPTIONS)
             sec = TIMER_OPTIONS[self.cycle_index]
-            print(f"Starting timer: {sec} seconds")
             # Use Qt signal to safely call start() from background thread
-            print(f"Emitting start_timer_signal with {sec} seconds")
             self.window.start_timer_signal.emit(float(sec))
-            print(f"Signal emitted")
 
             # Send via WebSocket if connected
             if self.ws_client and self.ws_client.running:
@@ -364,7 +339,6 @@ class CapTimerApp:
         self.window.raise_()
         # Process events to ensure window is rendered
         self.app.processEvents()
-        print("Overlay window initialized and should be visible at top center of screen")
         sys.exit(self.app.exec_())
 
 
