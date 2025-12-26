@@ -1,0 +1,6 @@
+PyQt6
+keyboard
+pywin32
+websockets
+
+
