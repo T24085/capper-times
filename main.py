@@ -60,6 +60,19 @@ DEFAULT_SERVER_URL = os.environ.get(
     "CAPTIMER_SERVER",
     "wss://web-production-03594.up.railway.app",
 )
+_APPDATA_ROOT = os.environ.get("APPDATA") or os.path.expanduser("~")
+PRESET_DIR = os.path.join(_APPDATA_ROOT, "CapperTimer")
+PRESET_FILE = os.path.join(PRESET_DIR, "capper-presets.json")
+MAP_PRESETS = [
+    "Custom",
+    "DX",
+    "Hollow",
+    "Raindance",
+    "Wavemist",
+    "Torment",
+    "Katabatic",
+    "Dry Dock",
+]
 
 MY_ID = str(uuid.uuid4())
 
@@ -384,7 +397,7 @@ class SettingsWindow(QtWidgets.QWidget):
         self.app = app
         self.setWindowTitle("Cap Timer Settings")
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint)
-        self.setFixedSize(360, 300)
+        self.setFixedSize(360, 400)
 
         layout = QtWidgets.QVBoxLayout()
 
@@ -405,6 +418,24 @@ class SettingsWindow(QtWidgets.QWidget):
         form.addRow("Capper 2 times", self.times_input_2)
         form.addRow("Capper 2 hotkey", self.hotkey_input_2)
 
+        self.monitor_select = QtWidgets.QComboBox()
+        self._refresh_monitors()
+        form.addRow("Display monitor", self.monitor_select)
+
+        self.map_select = QtWidgets.QComboBox()
+        for name in MAP_PRESETS:
+            self.map_select.addItem(name)
+        form.addRow("Map preset", self.map_select)
+
+        preset_row = QtWidgets.QHBoxLayout()
+        self.load_preset_btn = QtWidgets.QPushButton("Load")
+        self.save_preset_btn = QtWidgets.QPushButton("Save")
+        self.load_preset_btn.clicked.connect(self._on_load_preset)
+        self.save_preset_btn.clicked.connect(self._on_save_preset)
+        preset_row.addWidget(self.load_preset_btn)
+        preset_row.addWidget(self.save_preset_btn)
+        form.addRow("Preset actions", preset_row)
+
         apply_btn = QtWidgets.QPushButton("Apply")
         apply_btn.clicked.connect(self._on_apply)
 
@@ -420,11 +451,25 @@ class SettingsWindow(QtWidgets.QWidget):
 
         self.setLayout(layout)
 
-    def load_current(self, times_1, hotkey_1, times_2, hotkey_2):
+    def _refresh_monitors(self):
+        self.monitor_select.clear()
+        screens = QtWidgets.QApplication.screens()
+        for i, screen in enumerate(screens):
+            name = screen.name() or f"Monitor {i + 1}"
+            geom = screen.availableGeometry()
+            label = f"{i + 1}: {name} ({geom.width()}x{geom.height()})"
+            self.monitor_select.addItem(label, i)
+
+    def load_current(self, times_1, hotkey_1, times_2, hotkey_2, monitor_index, map_name=None):
+        self._refresh_monitors()
         self.times_input_1.setText(",".join(str(t) for t in times_1))
         self.hotkey_input_1.setText(hotkey_1)
         self.times_input_2.setText(",".join(str(t) for t in times_2))
         self.hotkey_input_2.setText(hotkey_2)
+        if 0 <= monitor_index < self.monitor_select.count():
+            self.monitor_select.setCurrentIndex(monitor_index)
+        if map_name and map_name in MAP_PRESETS:
+            self.map_select.setCurrentText(map_name)
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -434,7 +479,80 @@ class SettingsWindow(QtWidgets.QWidget):
         hotkey_text_1 = self.hotkey_input_1.text().strip().lower()
         times_text_2 = self.times_input_2.text().strip()
         hotkey_text_2 = self.hotkey_input_2.text().strip().lower()
-        self.app.update_settings(times_text_1, hotkey_text_1, times_text_2, hotkey_text_2)
+        monitor_index = int(self.monitor_select.currentData())
+        self.app.update_settings(
+            times_text_1,
+            hotkey_text_1,
+            times_text_2,
+            hotkey_text_2,
+            monitor_index,
+            self.map_select.currentText(),
+        )
+
+    def _load_presets(self):
+        try:
+            if os.path.exists(PRESET_FILE):
+                with open(PRESET_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            print(f"Failed to load presets: {e}")
+        return {}
+
+    def load_last_preset(self):
+        presets = self._load_presets()
+        last_map = presets.get("_last_map")
+        if last_map in MAP_PRESETS:
+            self.map_select.setCurrentText(last_map)
+            preset = presets.get(last_map)
+            if isinstance(preset, dict):
+                self.times_input_1.setText(preset.get("times_1", ""))
+                self.hotkey_input_1.setText(preset.get("hotkey_1", HOTKEY_1))
+                self.times_input_2.setText(preset.get("times_2", ""))
+                self.hotkey_input_2.setText(preset.get("hotkey_2", HOTKEY_2))
+                monitor_index = int(preset.get("monitor_index", 0))
+                if 0 <= monitor_index < self.monitor_select.count():
+                    self.monitor_select.setCurrentIndex(monitor_index)
+            self._on_apply()
+
+    def _save_presets(self, data):
+        try:
+            os.makedirs(PRESET_DIR, exist_ok=True)
+            with open(PRESET_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, sort_keys=True)
+        except Exception as e:
+            print(f"Failed to save presets: {e}")
+
+    def _on_load_preset(self):
+        map_name = self.map_select.currentText()
+        presets = self._load_presets()
+        preset = presets.get(map_name)
+        if not isinstance(preset, dict):
+            return
+        self.times_input_1.setText(preset.get("times_1", ""))
+        self.hotkey_input_1.setText(preset.get("hotkey_1", HOTKEY_1))
+        self.times_input_2.setText(preset.get("times_2", ""))
+        self.hotkey_input_2.setText(preset.get("hotkey_2", HOTKEY_2))
+        monitor_index = int(preset.get("monitor_index", 0))
+        if 0 <= monitor_index < self.monitor_select.count():
+            self.monitor_select.setCurrentIndex(monitor_index)
+        if map_name in MAP_PRESETS:
+            self.map_select.setCurrentText(map_name)
+        self._on_apply()
+
+    def _on_save_preset(self):
+        map_name = self.map_select.currentText()
+        presets = self._load_presets()
+        presets[map_name] = {
+            "times_1": self.times_input_1.text().strip(),
+            "hotkey_1": self.hotkey_input_1.text().strip().lower(),
+            "times_2": self.times_input_2.text().strip(),
+            "hotkey_2": self.hotkey_input_2.text().strip().lower(),
+            "monitor_index": int(self.monitor_select.currentData()),
+        }
+        presets["_last_map"] = map_name
+        self._save_presets(presets)
 
 
 class CapTimerApp:
@@ -446,6 +564,8 @@ class CapTimerApp:
         self.cycle_index = [-1, -1]
         self.lock = threading.Lock()
         self.hotkey_handlers = [None, None]
+        self.monitor_index = 0
+        self.selected_map = "Custom"
         
         # WebSocket support
         self.ws_client = None
@@ -516,6 +636,8 @@ class CapTimerApp:
         hotkey_text_1: str,
         times_text_2: str,
         hotkey_text_2: str,
+        monitor_index: int,
+        map_name: Optional[str] = None,
     ):
         global HOTKEY_1, HOTKEY_2, TIMER_OPTIONS_1, TIMER_OPTIONS_2
         with self.lock:
@@ -570,6 +692,12 @@ class CapTimerApp:
                     print(f"Capper 2 hotkey updated to '{HOTKEY_2}'")
                 except Exception as e:
                     print(f"ERROR: Failed to update capper 2 hotkey: {e}")
+
+            if monitor_index != self.monitor_index:
+                self.monitor_index = monitor_index
+                self.position_window()
+            if map_name:
+                self.selected_map = map_name
 
     def update_status(self, text: str):
         self.settings.set_status(text)
@@ -633,12 +761,34 @@ class CapTimerApp:
                 continue
 
     def run(self):
-        # center on primary screen
-        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        self.position_window()
+        # Show settings window
+        self.settings.load_current(
+            TIMER_OPTIONS_1,
+            HOTKEY_1,
+            TIMER_OPTIONS_2,
+            HOTKEY_2,
+            self.monitor_index,
+            self.selected_map,
+        )
+        self.settings.show()
+        
+        # Process events to ensure window is rendered
+        self.app.processEvents()
+        print(f"Window should be visible. Label texts: {self.window.label.texts()}")
+        sys.exit(self.app.exec())
+
+    def position_window(self):
+        screens = QtWidgets.QApplication.screens()
+        if not screens:
+            return
+        if not 0 <= self.monitor_index < len(screens):
+            self.monitor_index = 0
+        screen = screens[self.monitor_index].availableGeometry()
         w = 600
         h = 200
-        x = int((screen.width() - w) / 2)
-        y = int(screen.height() * 0.05)
+        x = int(screen.x() + (screen.width() - w) / 2)
+        y = int(screen.y() + screen.height() * 0.05)
         
         # Set window geometry explicitly
         self.window.setGeometry(x, y, w, h)
@@ -664,15 +814,6 @@ class CapTimerApp:
         self.window.label.setVisible(True)
         self.window.label.resize(w, h)
 
-        # Show settings window
-        self.settings.load_current(TIMER_OPTIONS_1, HOTKEY_1, TIMER_OPTIONS_2, HOTKEY_2)
-        self.settings.show()
-        
-        # Process events to ensure window is rendered
-        self.app.processEvents()
-        print(f"Window should be visible. Label texts: {self.window.label.texts()}")
-        sys.exit(self.app.exec())
-
 
 def parse_args():
     p = argparse.ArgumentParser(description="Simple Tribes cap timer overlay")
@@ -684,6 +825,7 @@ def parse_args():
     )
     p.add_argument("--hotkey1", default=HOTKEY_1, help="Capper 1 hotkey (default: v)")
     p.add_argument("--hotkey2", default=HOTKEY_2, help="Capper 2 hotkey (default: b)")
+    p.add_argument("--monitor", type=int, default=1, help="Monitor number (1 = primary)")
     return p.parse_args()
 
 
@@ -696,4 +838,6 @@ if __name__ == "__main__":
         network=(not args.no_network),
         server_url=server_url
     )
+    app.monitor_index = max(0, args.monitor - 1)
+    app.settings.load_last_preset()
     app.run()
