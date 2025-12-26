@@ -18,6 +18,7 @@ import uuid
 import threading
 import argparse
 import os
+from typing import Optional
 
 # Suppress Qt warnings/errors to console
 os.environ['QT_LOGGING_RULES'] = '*.debug=false'
@@ -52,6 +53,10 @@ except Exception:
 HOTKEY = "v"             # key to press
 UDP_PORT = 54545         # port for LAN sync
 TIMER_OPTIONS = [35, 25, 20]  # cycle order as requested
+DEFAULT_SERVER_URL = os.environ.get(
+    "CAPTIMER_SERVER",
+    "wss://web-production-03594.up.railway.app",
+)
 
 MY_ID = str(uuid.uuid4())
 
@@ -77,11 +82,13 @@ class WebSocketClient:
             )
             self.running = True
             print(f"Connected to server: {self.server_url}")
+            QtCore.QTimer.singleShot(0, lambda: self.app.update_status("WebSocket: connected"))
             # Start listening
             asyncio.create_task(self._listen())
             return True
         except Exception as e:
             print(f"Failed to connect to server: {e}")
+            QtCore.QTimer.singleShot(0, lambda: self.app.update_status("WebSocket: failed"))
             return False
     
     async def _listen(self):
@@ -103,9 +110,11 @@ class WebSocketClient:
         except websockets.exceptions.ConnectionClosed:
             self.running = False
             print("Disconnected from server")
+            QtCore.QTimer.singleShot(0, lambda: self.app.update_status("WebSocket: disconnected"))
         except Exception as e:
             print(f"WebSocket error: {e}")
             self.running = False
+            QtCore.QTimer.singleShot(0, lambda: self.app.update_status("WebSocket: error"))
     
     async def send_timer(self, seconds, sender_id):
         """Send timer start to server"""
@@ -121,6 +130,37 @@ class WebSocketClient:
         self.running = False
         if self.websocket and self.loop:
             asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
+
+
+class OverlayLabel(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._text = ""
+        self._color = "#00FF00"
+        self._font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+    def set_text(self, text: str, color: Optional[str] = None):
+        if color is not None:
+            self._color = color
+        self._text = text
+        self.update()
+
+    def text(self) -> str:
+        return self._text
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
+        # Clear previous frame fully on a translucent surface
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_Source)
+        painter.fillRect(self.rect(), QtCore.Qt.transparent)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        painter.setFont(self._font)
+        painter.setPen(QtGui.QColor(self._color))
+        painter.drawText(self.rect(), QtCore.Qt.AlignCenter, self._text)
+        painter.end()
 
 
 class OverlayWindow(QtWidgets.QMainWindow):
@@ -141,21 +181,8 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Connect signal to start method
         self.start_timer_signal.connect(self.start)
 
-        # central label
-        self.label = QtWidgets.QLabel("", self)
-        self.label.setAlignment(QtCore.Qt.AlignCenter)
-        font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
-        self.label.setFont(font)
-        # Make text visible with transparent background - only text shows
-        self.label.setStyleSheet("""
-            QLabel {
-                color: #00FF00;
-                background-color: transparent;
-                border: none;
-                padding: 20px;
-            }
-        """)
-        # Ensure label fills the window and is properly sized
+        # central display widget
+        self.label = OverlayLabel(self)
         self.label.setMinimumSize(600, 200)
         self.label.setMaximumSize(600, 200)
         self.label.resize(600, 200)
@@ -164,7 +191,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
         # Ensure window geometry is correct
         self.setGeometry(0, 0, 600, 200)
         # Set initial text
-        self.label.setText("READY")
+        self.label.set_text("READY")
         self.label.show()
 
         # background opacity widget to improve visibility
@@ -182,6 +209,9 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self._flash_timer.setInterval(250)  # Flash every 250ms
         self._flash_state = False
         self._flash_timer.timeout.connect(self._flash_tick)
+
+    def _set_label_text(self, text: str, color: Optional[str] = None):
+        self.label.set_text(text, color=color)
 
     def _apply_click_through_later(self):
         # Apply click-through after window is created on Windows
@@ -251,7 +281,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
         self.setWindowState(self.windowState() & ~QtCore.Qt.WindowMinimized | QtCore.Qt.WindowActive)
         self.raise_()
         # Clear "READY" text immediately and force update
-        self.label.setText("")
+        self.label.set_text("")
         QtWidgets.QApplication.processEvents()  # Force clear to happen
         print(f"Cleared READY, updating label with remaining={self._remaining}")
         # Update label with timer value
@@ -264,7 +294,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
     def stop(self):
         self._qtimer.stop()
         self._flash_timer.stop()
-        self.label.setText("")
+        self.label.set_text("")
         self._remaining = 0.0
         self._flash_state = False
 
@@ -279,79 +309,75 @@ class OverlayWindow(QtWidgets.QMainWindow):
         """Flash the label when <= 10 seconds"""
         if self._remaining <= 10:
             self._flash_state = not self._flash_state
-            # Recreate pixmap with flashing color
             sec = int(self._remaining + 0.999)
             text = f"{sec:02d}s"
             
             # Alternate between bright red and dimmed red
             color = "#FF0000" if self._flash_state else "#CC0000"
-            
-            # Create fresh transparent pixmap
-            pixmap = QtGui.QPixmap(self.label.size())
-            pixmap.fill(QtCore.Qt.transparent)
-            
-            painter = QtGui.QPainter(pixmap)
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
-            
-            font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
-            painter.setFont(font)
-            qcolor = QtGui.QColor(color)
-            painter.setPen(qcolor)
-            painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, text)
-            painter.end()
-            
-            self.label.setPixmap(pixmap)
-            self.label.repaint()
-            QtWidgets.QApplication.processEvents()
+            self._set_label_text(text, color=color)
 
     def _update_label(self):
         sec = int(self._remaining + 0.999)  # ceil-ish display
         text = f"{sec:02d}s"
-        
-        # Only update if text is changing to avoid unnecessary work
-        if hasattr(self.label, 'pixmap') and self.label.pixmap():
-            # Check if text in pixmap matches
-            pass
-        
+
         # Determine color
         if self._remaining <= 10:
             if not self._flash_timer.isActive():
                 self._flash_timer.start()
-            color = "#FF0000"  # Red
+            # Color handled by flash timer; update text only.
+            self._set_label_text(text)
         else:
             if self._flash_timer.isActive():
                 self._flash_timer.stop()
-                self._flash_state = False
-            color = "#00FF00"  # Green
-        
-        # Use QPixmap to properly clear transparent background
-        # Create a fresh transparent pixmap each time to ensure old pixels are cleared
-        pixmap = QtGui.QPixmap(self.label.size())
-        pixmap.fill(QtCore.Qt.transparent)  # Fill with transparent - this clears old pixels
-        
-        painter = QtGui.QPainter(pixmap)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.setRenderHint(QtGui.QPainter.TextAntialiasing)
-        
-        # Set font and color
-        font = QtGui.QFont("Segoe UI", 72, QtGui.QFont.Bold)
-        painter.setFont(font)
-        qcolor = QtGui.QColor(color)
-        painter.setPen(qcolor)
-        
-        # Draw text centered
-        painter.drawText(pixmap.rect(), QtCore.Qt.AlignCenter, text)
-        painter.end()
-        
-        # Set the pixmap to the label - this replaces the entire label content
-        self.label.setPixmap(pixmap)
-        
-        # Force update
-        self.label.setVisible(True)
-        self.label.show()
-        self.label.repaint()
-        QtWidgets.QApplication.processEvents()
+            self._flash_state = False
+            self._set_label_text(text, color="#00FF00")
+
+
+class SettingsWindow(QtWidgets.QWidget):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.setWindowTitle("Cap Timer Settings")
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.setFixedSize(360, 210)
+
+        layout = QtWidgets.QVBoxLayout()
+
+        self.times_input = QtWidgets.QLineEdit()
+        self.times_input.setPlaceholderText("Timer options (e.g., 35,25,20)")
+
+        self.hotkey_input = QtWidgets.QLineEdit()
+        self.hotkey_input.setPlaceholderText("Hotkey (single key, e.g., v)")
+
+        apply_btn = QtWidgets.QPushButton("Apply")
+        apply_btn.clicked.connect(self._on_apply)
+
+        exit_btn = QtWidgets.QPushButton("Exit")
+        exit_btn.clicked.connect(QtWidgets.QApplication.quit)
+
+        self.status_label = QtWidgets.QLabel("WebSocket: idle")
+
+        layout.addWidget(QtWidgets.QLabel("Capper times (seconds, comma-separated)"))
+        layout.addWidget(self.times_input)
+        layout.addWidget(QtWidgets.QLabel("Bind key"))
+        layout.addWidget(self.hotkey_input)
+        layout.addWidget(apply_btn)
+        layout.addWidget(self.status_label)
+        layout.addWidget(exit_btn)
+
+        self.setLayout(layout)
+
+    def load_current(self, times, hotkey):
+        self.times_input.setText(",".join(str(t) for t in times))
+        self.hotkey_input.setText(hotkey)
+
+    def set_status(self, text: str):
+        self.status_label.setText(text)
+
+    def _on_apply(self):
+        times_text = self.times_input.text().strip()
+        hotkey_text = self.hotkey_input.text().strip().lower()
+        self.app.update_settings(times_text, hotkey_text)
 
 
 class CapTimerApp:
@@ -359,13 +385,16 @@ class CapTimerApp:
         self.network_enabled = network
         self.app = QtWidgets.QApplication(sys.argv)
         self.window = OverlayWindow()
+        self.settings = SettingsWindow(self)
         self.cycle_index = -1
         self.lock = threading.Lock()
+        self.hotkey_handler = None
         
         # WebSocket support
         self.ws_client = None
         self.ws_loop = None
         if server_url and websockets:
+            self.update_status("WebSocket: connecting...")
             print(f"Connecting to WebSocket server: {server_url}")
             self.ws_loop = asyncio.new_event_loop()
             self.ws_thread = threading.Thread(target=self._run_ws_loop, daemon=True)
@@ -377,6 +406,12 @@ class CapTimerApp:
             self.ws_client.loop = self.ws_loop
         elif server_url:
             print("WARNING: websockets library not available. Install with: pip install websockets")
+            self.update_status("WebSocket: missing dependency")
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Missing Dependency",
+                "The 'websockets' library is missing, so network sync is disabled.",
+            )
         
         # Keep UDP for LAN fallback (only if no WebSocket)
         if self.network_enabled and not server_url:
@@ -401,7 +436,7 @@ class CapTimerApp:
         try:
             print(f"Setting up hotkey: '{HOTKEY}' (press this key to start timer)")
             # keyboard.on_press_key runs callbacks in background threads already
-            keyboard.on_press_key(HOTKEY, lambda e: self._on_hotkey())
+            self.hotkey_handler = keyboard.on_press_key(HOTKEY, lambda e: self._on_hotkey())
             print(f"Hotkey '{HOTKEY}' registered successfully!")
         except Exception as e:
             print(f"ERROR: Failed to register hotkey '{HOTKEY}': {e}")
@@ -410,6 +445,38 @@ class CapTimerApp:
         # Keep the thread alive by waiting
         while True:
             time.sleep(1)
+
+    def update_settings(self, times_text: str, hotkey_text: str):
+        global HOTKEY, TIMER_OPTIONS
+        with self.lock:
+            new_times = []
+            if times_text:
+                for part in times_text.split(","):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    try:
+                        new_times.append(int(part))
+                    except ValueError:
+                        continue
+            if new_times:
+                TIMER_OPTIONS = new_times
+                self.cycle_index = -1
+
+            if hotkey_text and hotkey_text != HOTKEY:
+                try:
+                    if self.hotkey_handler is not None:
+                        keyboard.unhook(self.hotkey_handler)
+                    HOTKEY = hotkey_text
+                    self.hotkey_handler = keyboard.on_press_key(
+                        HOTKEY, lambda e: self._on_hotkey()
+                    )
+                    print(f"Hotkey updated to '{HOTKEY}'")
+                except Exception as e:
+                    print(f"ERROR: Failed to update hotkey: {e}")
+
+    def update_status(self, text: str):
+        self.settings.set_status(text)
 
     def _on_hotkey(self):
         # cycle index => start chosen timer and broadcast if enabled
@@ -486,6 +553,10 @@ class CapTimerApp:
         self.window.label.show()
         self.window.label.setVisible(True)
         self.window.label.resize(w, h)
+
+        # Show settings window
+        self.settings.load_current(TIMER_OPTIONS, HOTKEY)
+        self.settings.show()
         
         # Process events to ensure window is rendered
         self.app.processEvents()
@@ -496,7 +567,11 @@ class CapTimerApp:
 def parse_args():
     p = argparse.ArgumentParser(description="Simple Tribes cap timer overlay")
     p.add_argument("--no-network", action="store_true", help="Disable network sync (local-only)")
-    p.add_argument("--server", help="WebSocket server URL (e.g., wss://your-app.railway.app)")
+    p.add_argument(
+        "--server",
+        default=DEFAULT_SERVER_URL,
+        help="WebSocket server URL (e.g., wss://your-app.railway.app)",
+    )
     p.add_argument("--hotkey", default=HOTKEY, help="Hotkey to trigger the timer (default: v)")
     return p.parse_args()
 
@@ -504,9 +579,9 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     HOTKEY = args.hotkey.lower()
+    server_url = None if args.no_network else args.server
     app = CapTimerApp(
         network=(not args.no_network),
-        server_url=args.server
+        server_url=server_url
     )
     app.run()
-
