@@ -56,6 +56,14 @@ UDP_PORT = 54545           # port for LAN sync
 TIMER_OPTIONS_1 = [35, 25, 20]  # cycle order as requested
 TIMER_OPTIONS_2 = [35, 25, 20]
 CAP_COLORS = ["#00FF00", "#7A3DF0"]
+BOARD_ASSETS = ["Generator", "Turret 1", "Turret 2", "Radar / Sensor"]
+BOARD_STATE_COLORS = ["#00FF00", "#FFCC00", "#FF0000"]
+DEFAULT_ROLE = "Capper 1"
+LOCKED_ROLES = ["Capper 1", "Capper 2"]
+WINDOW_WIDTH = 940
+WINDOW_HEIGHT = 200
+BOARD_WIDTH = 170
+TIMER_WIDTH = 600
 DEFAULT_SERVER_URL = os.environ.get(
     "CAPTIMER_SERVER",
     "wss://web-production-03594.up.railway.app",
@@ -99,6 +107,7 @@ class WebSocketClient:
             self.running = True
             print(f"Connected to server: {self.server_url}")
             QtCore.QTimer.singleShot(0, lambda: self.app.update_status("WebSocket: connected"))
+            QtCore.QTimer.singleShot(0, self.app.on_ws_connected)
             # Start listening
             asyncio.create_task(self._listen())
             return True
@@ -113,7 +122,8 @@ class WebSocketClient:
             async for message in self.websocket:
                 try:
                     data = json.loads(message)
-                    if data.get("cmd") == "start" and "seconds" in data:
+                    cmd = data.get("cmd")
+                    if cmd == "start" and "seconds" in data:
                         # Ignore our own messages
                         if data.get("sender") == MY_ID:
                             continue
@@ -126,6 +136,27 @@ class WebSocketClient:
                         # Update timer in Qt thread using signal (thread-safe)
                         # Capture sec in lambda to avoid closure issues
                         self.app.window.start_timer_signal.emit(index, float(sec))
+                    elif cmd == "board_update":
+                        if data.get("sender") == MY_ID:
+                            continue
+                        board = data.get("board")
+                        index = int(data.get("index", -1))
+                        state = int(data.get("state", -1))
+                        if board not in ("defense", "offense"):
+                            continue
+                        if index < 0 or index >= len(BOARD_ASSETS):
+                            continue
+                        if state not in (0, 1, 2):
+                            continue
+                        self.app.window.board_update_signal.emit(board, index, state)
+                    elif cmd == "role_status":
+                        roles = data.get("roles", {})
+                        if isinstance(roles, dict):
+                            self.app.handle_role_status(roles)
+                    elif cmd == "role_result":
+                        role = data.get("role")
+                        ok = bool(data.get("ok"))
+                        self.app.handle_role_result(role, ok)
                 except Exception as e:
                     print(f"Error processing WebSocket message: {e}")
                     continue
@@ -145,6 +176,39 @@ class WebSocketClient:
                 msg = json.dumps(
                     {"cmd": "start", "seconds": seconds, "sender": sender_id, "capper": capper}
                 )
+                await self.websocket.send(msg)
+            except Exception as e:
+                print(f"Failed to send: {e}")
+
+    async def send_board_update(self, board, index, state, sender_id):
+        """Send board state update to server"""
+        if self.websocket and self.running:
+            try:
+                msg = json.dumps(
+                    {
+                        "cmd": "board_update",
+                        "board": board,
+                        "index": index,
+                        "state": state,
+                        "sender": sender_id,
+                    }
+                )
+                await self.websocket.send(msg)
+            except Exception as e:
+                print(f"Failed to send: {e}")
+
+    async def send_role_claim(self, role, sender_id):
+        if self.websocket and self.running:
+            try:
+                msg = json.dumps({"cmd": "role_claim", "role": role, "sender": sender_id})
+                await self.websocket.send(msg)
+            except Exception as e:
+                print(f"Failed to send: {e}")
+
+    async def send_role_release(self, role, sender_id):
+        if self.websocket and self.running:
+            try:
+                msg = json.dumps({"cmd": "role_release", "role": role, "sender": sender_id})
                 await self.websocket.send(msg)
             except Exception as e:
                 print(f"Failed to send: {e}")
@@ -193,9 +257,78 @@ class OverlayLabel(QtWidgets.QWidget):
         painter.end()
 
 
+class BoardWidget(QtWidgets.QWidget):
+    def __init__(self, title, assets, width, strike_destroyed=False, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._assets = list(assets)
+        self._states = [0] * len(self._assets)
+        self._selected = 0
+        self._strike_destroyed = strike_destroyed
+        self._title_font = QtGui.QFont("Segoe UI", 12, QtGui.QFont.Weight.Bold)
+        self._font = QtGui.QFont("Segoe UI", 11, QtGui.QFont.Weight.Bold)
+        self.setMinimumSize(width, WINDOW_HEIGHT)
+        self.setMaximumSize(width, WINDOW_HEIGHT)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def set_states(self, states):
+        if len(states) != len(self._assets):
+            return
+        self._states = [max(0, min(2, int(s))) for s in states]
+        self.update()
+
+    def set_state(self, index, state):
+        if 0 <= index < len(self._assets):
+            self._states[index] = max(0, min(2, int(state)))
+            self.update()
+
+    def set_selected(self, index):
+        if 0 <= index < len(self._assets):
+            self._selected = index
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.TextAntialiasing)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(self.rect(), QtCore.Qt.GlobalColor.transparent)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceOver)
+
+        title_height = 18
+        painter.setFont(self._title_font)
+        painter.setPen(QtGui.QColor("#FFFFFF"))
+        painter.drawText(
+            QtCore.QRect(0, 0, self.rect().width(), title_height),
+            QtCore.Qt.AlignmentFlag.AlignCenter,
+            self._title,
+        )
+
+        row_height = int((self.rect().height() - title_height) / max(len(self._assets), 1))
+        painter.setFont(self._font)
+        for i, asset in enumerate(self._assets):
+            y = title_height + i * row_height
+            rect = QtCore.QRect(4, y, self.rect().width() - 8, row_height)
+            if i == self._selected:
+                painter.fillRect(rect, QtGui.QColor(255, 255, 255, 30))
+            color = BOARD_STATE_COLORS[self._states[i]]
+            painter.setPen(QtGui.QColor(color))
+            painter.drawText(
+                rect,
+                QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft,
+                asset,
+            )
+            if self._strike_destroyed and self._states[i] == 2:
+                mid_y = rect.center().y()
+                painter.setPen(QtGui.QColor(color))
+                painter.drawLine(rect.left(), mid_y, rect.right(), mid_y)
+        painter.end()
+
+
 class OverlayWindow(QtWidgets.QMainWindow):
     # Signal to start timer from any thread
     start_timer_signal = QtCore.pyqtSignal(int, float)
+    board_update_signal = QtCore.pyqtSignal(str, int, int)
     
     def __init__(self):
         super().__init__()
@@ -206,7 +339,7 @@ class OverlayWindow(QtWidgets.QMainWindow):
             | QtCore.Qt.WindowType.WindowStaysOnTopHint
             | QtCore.Qt.WindowType.Tool
         )
-        self.resize(600, 200)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
         # Ensure transparent window background (required in PyQt6)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground, True)
@@ -214,18 +347,36 @@ class OverlayWindow(QtWidgets.QMainWindow):
         
         # Connect signal to start method
         self.start_timer_signal.connect(self.start_timer)
+        self.board_update_signal.connect(self._apply_board_update)
+
+        container = QtWidgets.QWidget(self)
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self.defense_board = BoardWidget(
+            "Defense", BOARD_ASSETS, BOARD_WIDTH, strike_destroyed=False, parent=container
+        )
+        self.offense_board = BoardWidget(
+            "Offense", BOARD_ASSETS, BOARD_WIDTH, strike_destroyed=True, parent=container
+        )
 
         # central display widget
-        self.label = OverlayLabel(lines=2, parent=self)
-        self.label.setMinimumSize(600, 200)
-        self.label.setMaximumSize(600, 200)
-        self.label.resize(600, 200)
-        self.setCentralWidget(self.label)
+        self.label = OverlayLabel(lines=2, parent=container)
+        self.label.setMinimumSize(TIMER_WIDTH, WINDOW_HEIGHT)
+        self.label.setMaximumSize(TIMER_WIDTH, WINDOW_HEIGHT)
+        self.label.resize(TIMER_WIDTH, WINDOW_HEIGHT)
+
+        layout.addWidget(self.defense_board)
+        layout.addWidget(self.label)
+        layout.addWidget(self.offense_board)
+
+        self.setCentralWidget(container)
         
         # Ensure window geometry is correct
-        self.setGeometry(0, 0, 600, 200)
+        self.setGeometry(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT)
         # Set initial text
-        self._ready_texts = ["CAP 1 READY", "CAP 2 READY"]
+        self._ready_texts = ["READY", "READY"]
         self.label.set_text(0, self._ready_texts[0])
         self.label.set_text(1, self._ready_texts[1])
         self.label.show()
@@ -249,6 +400,33 @@ class OverlayWindow(QtWidgets.QMainWindow):
 
     def _set_label_text(self, index: int, text: str, color: Optional[str] = None):
         self.label.set_text(index, text, color=color)
+
+    def _apply_board_update(self, board: str, index: int, state: int):
+        self.update_board_state(board, index, state)
+
+    def set_board_visible(self, board: str, visible: bool):
+        if board == "defense":
+            self.defense_board.setVisible(visible)
+        elif board == "offense":
+            self.offense_board.setVisible(visible)
+
+    def set_board_selected(self, board: str, index: int):
+        if board == "defense":
+            self.defense_board.set_selected(index)
+        elif board == "offense":
+            self.offense_board.set_selected(index)
+
+    def update_board_state(self, board: str, index: int, state: int):
+        if board == "defense":
+            self.defense_board.set_state(index, state)
+        elif board == "offense":
+            self.offense_board.set_state(index, state)
+
+    def set_board_states(self, board: str, states):
+        if board == "defense":
+            self.defense_board.set_states(states)
+        elif board == "offense":
+            self.offense_board.set_states(states)
 
     def _apply_click_through_later(self):
         # Apply click-through after window is created on Windows
@@ -397,7 +575,7 @@ class SettingsWindow(QtWidgets.QWidget):
         self.app = app
         self.setWindowTitle("Cap Timer Settings")
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint)
-        self.setFixedSize(360, 400)
+        self.setFixedSize(360, 520)
 
         layout = QtWidgets.QVBoxLayout()
 
@@ -436,6 +614,28 @@ class SettingsWindow(QtWidgets.QWidget):
         preset_row.addWidget(self.save_preset_btn)
         form.addRow("Preset actions", preset_row)
 
+        role_group = QtWidgets.QGroupBox("Role")
+        role_layout = QtWidgets.QHBoxLayout()
+        self.role_buttons = {}
+        self.role_labels = {}
+        for role in ["Capper 1", "Capper 2", "Offense", "Defense"]:
+            btn = QtWidgets.QRadioButton(role)
+            self.role_buttons[role] = btn
+            self.role_labels[role] = role
+            role_layout.addWidget(btn)
+        self.role_buttons[DEFAULT_ROLE].setChecked(True)
+        role_group.setLayout(role_layout)
+
+        view_group = QtWidgets.QGroupBox("Board visibility")
+        view_layout = QtWidgets.QVBoxLayout()
+        self.view_defense = QtWidgets.QCheckBox("Show Defense Board")
+        self.view_offense = QtWidgets.QCheckBox("Show Offense Board")
+        self.view_defense.setChecked(True)
+        self.view_offense.setChecked(True)
+        view_layout.addWidget(self.view_defense)
+        view_layout.addWidget(self.view_offense)
+        view_group.setLayout(view_layout)
+
         apply_btn = QtWidgets.QPushButton("Apply")
         apply_btn.clicked.connect(self._on_apply)
 
@@ -445,6 +645,8 @@ class SettingsWindow(QtWidgets.QWidget):
         self.status_label = QtWidgets.QLabel("WebSocket: idle")
 
         layout.addLayout(form)
+        layout.addWidget(role_group)
+        layout.addWidget(view_group)
         layout.addWidget(apply_btn)
         layout.addWidget(self.status_label)
         layout.addWidget(exit_btn)
@@ -460,7 +662,59 @@ class SettingsWindow(QtWidgets.QWidget):
             label = f"{i + 1}: {name} ({geom.width()}x{geom.height()})"
             self.monitor_select.addItem(label, i)
 
-    def load_current(self, times_1, hotkey_1, times_2, hotkey_2, monitor_index, map_name=None):
+    def _current_role(self):
+        for role, btn in self.role_buttons.items():
+            if btn.isChecked():
+                return role
+        return DEFAULT_ROLE
+
+    def set_role(self, role):
+        if role in self.role_buttons:
+            self.role_buttons[role].setChecked(True)
+
+    def update_role_availability(self, role_owners, my_id):
+        for role in LOCKED_ROLES:
+            owner = role_owners.get(role)
+            btn = self.role_buttons.get(role)
+            if not btn:
+                continue
+            available = owner is None or owner == my_id
+            btn.setEnabled(available)
+            if available:
+                btn.setText(self.role_labels[role])
+            else:
+                btn.setText(f"{self.role_labels[role]} (taken)")
+
+    def prompt_role(self, current_role):
+        roles = ["Capper 1", "Capper 2", "Offense", "Defense"]
+        if current_role in roles:
+            current_index = roles.index(current_role)
+        else:
+            current_index = 0
+        choice, ok = QtWidgets.QInputDialog.getItem(
+            self,
+            "Select Role",
+            "Choose your role:",
+            roles,
+            current_index,
+            False,
+        )
+        if ok and choice:
+            return choice
+        return None
+
+    def load_current(
+        self,
+        times_1,
+        hotkey_1,
+        times_2,
+        hotkey_2,
+        monitor_index,
+        map_name=None,
+        role=None,
+        show_defense=True,
+        show_offense=True,
+    ):
         self._refresh_monitors()
         self.times_input_1.setText(",".join(str(t) for t in times_1))
         self.hotkey_input_1.setText(hotkey_1)
@@ -470,6 +724,10 @@ class SettingsWindow(QtWidgets.QWidget):
             self.monitor_select.setCurrentIndex(monitor_index)
         if map_name and map_name in MAP_PRESETS:
             self.map_select.setCurrentText(map_name)
+        if role in self.role_buttons:
+            self.role_buttons[role].setChecked(True)
+        self.view_defense.setChecked(bool(show_defense))
+        self.view_offense.setChecked(bool(show_offense))
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -487,6 +745,9 @@ class SettingsWindow(QtWidgets.QWidget):
             hotkey_text_2,
             monitor_index,
             self.map_select.currentText(),
+            self._current_role(),
+            self.view_defense.isChecked(),
+            self.view_offense.isChecked(),
         )
 
     def _load_presets(self):
@@ -515,6 +776,10 @@ class SettingsWindow(QtWidgets.QWidget):
                 if 0 <= monitor_index < self.monitor_select.count():
                     self.monitor_select.setCurrentIndex(monitor_index)
             self._on_apply()
+        role = presets.get("_last_role")
+        if role in self.role_buttons:
+            self.role_buttons[role].setChecked(True)
+            self._on_apply()
 
     def _save_presets(self, data):
         try:
@@ -523,6 +788,11 @@ class SettingsWindow(QtWidgets.QWidget):
                 json.dump(data, f, indent=2, sort_keys=True)
         except Exception as e:
             print(f"Failed to save presets: {e}")
+
+    def _save_last_role(self, role):
+        presets = self._load_presets()
+        presets["_last_role"] = role
+        self._save_presets(presets)
 
     def _on_load_preset(self):
         map_name = self.map_select.currentText()
@@ -552,6 +822,7 @@ class SettingsWindow(QtWidgets.QWidget):
             "monitor_index": int(self.monitor_select.currentData()),
         }
         presets["_last_map"] = map_name
+        presets["_last_role"] = self._current_role()
         self._save_presets(presets)
 
 
@@ -564,8 +835,25 @@ class CapTimerApp:
         self.cycle_index = [-1, -1]
         self.lock = threading.Lock()
         self.hotkey_handlers = [None, None]
+        self.arrow_handlers = []
         self.monitor_index = 0
         self.selected_map = "Custom"
+        self.role = DEFAULT_ROLE
+        self.show_defense = True
+        self.show_offense = True
+        self.role_owners = {role: None for role in LOCKED_ROLES}
+        self.claimed_role = None
+        self.pending_role = None
+        self.board_states = {
+            "defense": [0] * len(BOARD_ASSETS),
+            "offense": [0] * len(BOARD_ASSETS),
+        }
+        self.board_selected = {"defense": 0, "offense": 0}
+        self._refresh_board_display("defense")
+        self._refresh_board_display("offense")
+        self.window.set_board_selected("defense", self.board_selected["defense"])
+        self.window.set_board_selected("offense", self.board_selected["offense"])
+        self.window.board_update_signal.connect(self._apply_board_update)
         
         # WebSocket support
         self.ws_client = None
@@ -621,6 +909,18 @@ class CapTimerApp:
             self.hotkey_handlers[1] = keyboard.on_press_key(
                 HOTKEY_2, lambda e: self._on_hotkey(1)
             )
+            self.arrow_handlers.append(
+                keyboard.on_press_key("up", lambda e: self._on_arrow("up"))
+            )
+            self.arrow_handlers.append(
+                keyboard.on_press_key("down", lambda e: self._on_arrow("down"))
+            )
+            self.arrow_handlers.append(
+                keyboard.on_press_key("left", lambda e: self._on_arrow("left"))
+            )
+            self.arrow_handlers.append(
+                keyboard.on_press_key("right", lambda e: self._on_arrow("right"))
+            )
             print(f"Hotkeys registered successfully!")
         except Exception as e:
             print(f"ERROR: Failed to register hotkeys: {e}")
@@ -638,6 +938,9 @@ class CapTimerApp:
         hotkey_text_2: str,
         monitor_index: int,
         map_name: Optional[str] = None,
+        role: Optional[str] = None,
+        show_defense: Optional[bool] = None,
+        show_offense: Optional[bool] = None,
     ):
         global HOTKEY_1, HOTKEY_2, TIMER_OPTIONS_1, TIMER_OPTIONS_2
         with self.lock:
@@ -698,9 +1001,84 @@ class CapTimerApp:
                 self.position_window()
             if map_name:
                 self.selected_map = map_name
+            if role:
+                if role in LOCKED_ROLES:
+                    if self.role_owners.get(role) == MY_ID or self.role_owners.get(role) is None:
+                        self._request_role(role)
+                    else:
+                        self.update_status(f"Role '{role}' is already taken")
+                else:
+                    self._set_role(role)
+            if show_defense is not None:
+                self.show_defense = bool(show_defense)
+                self.window.set_board_visible("defense", self.show_defense)
+            if show_offense is not None:
+                self.show_offense = bool(show_offense)
+                self.window.set_board_visible("offense", self.show_offense)
 
     def update_status(self, text: str):
         self.settings.set_status(text)
+
+    def on_ws_connected(self):
+        if self.role in LOCKED_ROLES:
+            self._request_role(self.role)
+
+    def handle_role_status(self, roles):
+        for role in LOCKED_ROLES:
+            self.role_owners[role] = roles.get(role)
+        self.settings.update_role_availability(self.role_owners, MY_ID)
+        if self.role in LOCKED_ROLES and self.role_owners.get(self.role) not in (None, MY_ID):
+            self.update_status(f"Role '{self.role}' is taken")
+
+    def handle_role_result(self, role, ok):
+        if role not in LOCKED_ROLES:
+            return
+        if ok:
+            self.claimed_role = role
+            self.pending_role = None
+            self._set_role(role)
+            self.update_status(f"Role '{role}' claimed")
+        else:
+            self.pending_role = None
+            self.settings.set_role(self.role)
+            self.update_status(f"Role '{role}' is already taken")
+
+    def _set_role(self, role):
+        if role == self.role:
+            return
+        if self.role in LOCKED_ROLES:
+            self._release_role(self.role)
+        self.role = role
+        self.settings.set_role(role)
+        self.settings._save_last_role(role)
+
+    def _request_role(self, role):
+        if not self.ws_client or not self.ws_client.running:
+            self._set_role(role)
+            return
+        self.pending_role = role
+        asyncio.run_coroutine_threadsafe(
+            self.ws_client.send_role_claim(role, MY_ID), self.ws_loop
+        )
+
+    def _release_role(self, role):
+        if self.ws_client and self.ws_client.running:
+            asyncio.run_coroutine_threadsafe(
+                self.ws_client.send_role_release(role, MY_ID), self.ws_loop
+            )
+
+    def _effective_board_states(self, board: str):
+        states = list(self.board_states[board])
+        for i in range(len(states)):
+            if states[i] == 1:
+                states[i] = 0
+        if states and states[0] == 2:
+            for i in range(1, len(states)):
+                states[i] = 1
+        return states
+
+    def _refresh_board_display(self, board: str):
+        self.window.set_board_states(board, self._effective_board_states(board))
 
     def _on_hotkey(self, index: int):
         # cycle index => start chosen timer and broadcast if enabled
@@ -733,6 +1111,68 @@ class CapTimerApp:
                 except Exception:
                     pass
 
+    def _on_arrow(self, direction: str):
+        board = None
+        if self.role == "Defense":
+            board = "defense"
+        elif self.role == "Offense":
+            board = "offense"
+        else:
+            return
+        if board == "defense" and not self.show_defense:
+            return
+        if board == "offense" and not self.show_offense:
+            return
+
+        if direction in ("up", "down"):
+            delta = -1 if direction == "up" else 1
+            current = self.board_selected[board]
+            current = (current + delta) % len(BOARD_ASSETS)
+            self.board_selected[board] = current
+            self.window.set_board_selected(board, current)
+            return
+
+        delta = -1 if direction == "left" else 1
+        index = self.board_selected[board]
+        state = self.board_states[board][index]
+        if index == 0:
+            state = 2 if state == 0 else 0
+        else:
+            state = 2 if state == 0 else 0
+        self.board_states[board][index] = state
+        self._refresh_board_display(board)
+        self._broadcast_board_update(board, index, state)
+
+    def _broadcast_board_update(self, board: str, index: int, state: int):
+        if self.ws_client and self.ws_client.running:
+            asyncio.run_coroutine_threadsafe(
+                self.ws_client.send_board_update(board, index, state, MY_ID), self.ws_loop
+            )
+        elif self.network_enabled and self.sock_tx:
+            msg = {
+                "cmd": "board_update",
+                "board": board,
+                "index": index,
+                "state": state,
+                "sender": MY_ID,
+            }
+            try:
+                self.sock_tx.sendto(json.dumps(msg).encode("utf-8"), ("255.255.255.255", UDP_PORT))
+            except Exception:
+                pass
+
+    def _apply_board_update(self, board: str, index: int, state: int):
+        if board not in self.board_states:
+            return
+        if index < 0 or index >= len(self.board_states[board]):
+            return
+        if state not in (0, 1, 2):
+            return
+        if state == 1:
+            state = 0
+        self.board_states[board][index] = state
+        self._refresh_board_display(board)
+
     def _udp_listener(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -757,11 +1197,26 @@ class CapTimerApp:
                     print(f"Received timer start from UDP (capper {capper}): {sec}s")
                     # Use signal for thread-safe communication with Qt thread
                     self.window.start_timer_signal.emit(index, float(sec))
+                elif msg.get("cmd") == "board_update":
+                    board = msg.get("board")
+                    index = int(msg.get("index", -1))
+                    state = int(msg.get("state", -1))
+                    if board not in ("defense", "offense"):
+                        continue
+                    if index < 0 or index >= len(BOARD_ASSETS):
+                        continue
+                    if state not in (0, 1, 2):
+                        continue
+                    self.window.board_update_signal.emit(board, index, state)
             except Exception:
                 continue
 
     def run(self):
         self.position_window()
+        if self.role == DEFAULT_ROLE:
+            selected = self.settings.prompt_role(self.role)
+            if selected:
+                self._set_role(selected)
         # Show settings window
         self.settings.load_current(
             TIMER_OPTIONS_1,
@@ -770,7 +1225,12 @@ class CapTimerApp:
             HOTKEY_2,
             self.monitor_index,
             self.selected_map,
+            self.role,
+            self.show_defense,
+            self.show_offense,
         )
+        self.window.set_board_visible("defense", self.show_defense)
+        self.window.set_board_visible("offense", self.show_offense)
         self.settings.show()
         
         # Process events to ensure window is rendered
@@ -785,8 +1245,8 @@ class CapTimerApp:
         if not 0 <= self.monitor_index < len(screens):
             self.monitor_index = 0
         screen = screens[self.monitor_index].availableGeometry()
-        w = 600
-        h = 200
+        w = WINDOW_WIDTH
+        h = WINDOW_HEIGHT
         x = int(screen.x() + (screen.width() - w) / 2)
         y = int(screen.y() + screen.height() * 0.05)
         
@@ -812,7 +1272,7 @@ class CapTimerApp:
         # Ensure label is visible and properly sized
         self.window.label.show()
         self.window.label.setVisible(True)
-        self.window.label.resize(w, h)
+        self.window.label.resize(TIMER_WIDTH, WINDOW_HEIGHT)
 
 
 def parse_args():
