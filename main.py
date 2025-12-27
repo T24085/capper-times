@@ -573,7 +573,7 @@ class SettingsWindow(QtWidgets.QWidget):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.setWindowTitle("Cap Timer Settings")
+        self.setWindowTitle("DPRK Tactical Display")
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowType.WindowStaysOnTopHint)
         self.setFixedSize(360, 520)
 
@@ -652,6 +652,108 @@ class SettingsWindow(QtWidgets.QWidget):
         layout.addWidget(exit_btn)
 
         self.setLayout(layout)
+        self.setStyleSheet(
+            "QWidget {"
+            "background-color: #7A0F1A;"
+            "color: #FFFFFF;"
+            "}"
+            "QGroupBox {"
+            "border: 1px solid rgba(255,255,255,0.4);"
+            "border-radius: 10px;"
+            "margin-top: 12px;"
+            "background-color: #FFF4F6;"
+            "}"
+            "QGroupBox::title {"
+            "subcontrol-origin: margin;"
+            "left: 12px;"
+            "padding: 0 6px;"
+            "color: #C4142E;"
+            "font-weight: 700;"
+            "}"
+            "QGroupBox QLabel, QGroupBox QCheckBox, QGroupBox QRadioButton {"
+            "color: #1B1F24;"
+            "}"
+            "QCheckBox, QRadioButton {"
+            "color: #1B1F24;"
+            "font-weight: 600;"
+            "}"
+            "QGroupBox QRadioButton {"
+            "background-color: #FFFFFF;"
+            "border: 1px solid rgba(0,0,0,0.2);"
+            "border-radius: 6px;"
+            "padding: 4px 8px;"
+            "}"
+            "QGroupBox QRadioButton::indicator {"
+            "width: 12px;"
+            "height: 12px;"
+            "}"
+            "QGroupBox QRadioButton::indicator:checked {"
+            "background-color: #2E6BFF;"
+            "border: 1px solid #1B1F24;"
+            "}"
+            "QGroupBox QRadioButton::indicator:unchecked {"
+            "background-color: #FFFFFF;"
+            "border: 1px solid rgba(0,0,0,0.35);"
+            "}"
+            "QGroupBox QCheckBox {"
+            "background-color: #FFFFFF;"
+            "border: 1px solid rgba(0,0,0,0.2);"
+            "border-radius: 6px;"
+            "padding: 4px 8px;"
+            "}"
+            "QGroupBox QCheckBox::indicator:checked {"
+            "background-color: #2E6BFF;"
+            "border: 1px solid #1B1F24;"
+            "}"
+            "QCheckBox::indicator:unchecked, QRadioButton::indicator:unchecked {"
+            "background-color: #FFFFFF;"
+            "border: 1px solid rgba(0,0,0,0.35);"
+            "}"
+            "QLineEdit, QComboBox {"
+            "background-color: #FFFFFF;"
+            "border: 1px solid rgba(30,30,30,0.2);"
+            "border-radius: 8px;"
+            "padding: 7px;"
+            "color: #1B1F24;"
+            "selection-background-color: #2E6BFF;"
+            "}"
+            "QComboBox::down-arrow {"
+            "image: none;"
+            "border-left: 6px solid transparent;"
+            "border-right: 6px solid transparent;"
+            "border-top: 7px solid #C4142E;"
+            "margin-right: 6px;"
+            "}"
+            "QPushButton {"
+            "background-color: #2E6BFF;"
+            "border: 1px solid rgba(255,255,255,0.2);"
+            "border-radius: 8px;"
+            "padding: 7px;"
+            "color: #FFFFFF;"
+            "font-weight: 700;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: #3F7CFF;"
+            "}"
+            "QPushButton:pressed {"
+            "background-color: #2457CC;"
+            "}"
+            "QLabel {"
+            "color: #FFFFFF;"
+            "}"
+            "QCheckBox::indicator, QRadioButton::indicator {"
+            "width: 14px;"
+            "height: 14px;"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "background-color: #C4142E;"
+            "border: 1px solid #FFFFFF;"
+            "}"
+            "QRadioButton::indicator:checked {"
+            "background-color: #C4142E;"
+            "border: 1px solid #FFFFFF;"
+            "}"
+        )
 
     def _refresh_monitors(self):
         self.monitor_select.clear()
@@ -687,21 +789,55 @@ class SettingsWindow(QtWidgets.QWidget):
 
     def prompt_role(self, current_role):
         roles = ["Capper 1", "Capper 2", "Offense", "Defense"]
-        if current_role in roles:
-            current_index = roles.index(current_role)
-        else:
-            current_index = 0
-        choice, ok = QtWidgets.QInputDialog.getItem(
-            self,
-            "Select Role",
-            "Choose your role:",
-            roles,
-            current_index,
-            False,
-        )
-        if ok and choice:
-            return choice
-        return None
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Role")
+        dialog.setModal(True)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        label = QtWidgets.QLabel("Choose your role:")
+        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(label)
+
+        grid = QtWidgets.QGridLayout()
+        layout.addLayout(grid)
+
+        chosen = {"role": None}
+
+        def pick(role):
+            chosen["role"] = role
+            dialog.accept()
+
+        role_colors = {
+            "Capper 1": "#7A3DF0",
+            "Capper 2": "#7A3DF0",
+            "Offense": "#2BBE4B",
+            "Defense": "#E14444",
+        }
+        for i, role in enumerate(roles):
+            btn = QtWidgets.QPushButton(role)
+            btn.setMinimumHeight(36)
+            color = role_colors.get(role, "#444444")
+            btn.setStyleSheet(
+                "QPushButton {"
+                f"background-color: {color};"
+                "color: white;"
+                "border: 1px solid rgba(255,255,255,0.3);"
+                "border-radius: 6px;"
+                "padding: 6px;"
+                "font-weight: 600;"
+                "}"
+                "QPushButton:hover {"
+                "filter: brightness(1.1);"
+                "}"
+                "QPushButton:pressed {"
+                "filter: brightness(0.9);"
+                "}"
+            )
+            btn.clicked.connect(lambda _, r=role: pick(r))
+            grid.addWidget(btn, i // 2, i % 2)
+
+        dialog.setLayout(layout)
+        dialog.exec()
+        return chosen["role"]
 
     def load_current(
         self,
@@ -1074,7 +1210,10 @@ class CapTimerApp:
                 states[i] = 0
         if states and states[0] == 2:
             for i in range(1, len(states)):
-                states[i] = 1
+                # Only turn yellow if currently green (not destroyed)
+                # If already red (destroyed), keep it red
+                if states[i] == 0:
+                    states[i] = 1
         return states
 
     def _refresh_board_display(self, board: str):
@@ -1082,6 +1221,10 @@ class CapTimerApp:
 
     def _on_hotkey(self, index: int):
         # cycle index => start chosen timer and broadcast if enabled
+        if index == 0 and self.role != "Capper 1":
+            return
+        if index == 1 and self.role != "Capper 2":
+            return
         print(f"Hotkey pressed for capper {index + 1}!")
         with self.lock:
             if index == 0:
